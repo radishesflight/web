@@ -5,14 +5,15 @@
  *   token        - 当前 token(初始从 localStorage 读,刷新不丢)
  *   user         - 用户信息({id, username, email, phone, role, role_id})
  *   menus        - 菜单树(后端 LoginResp.menus)
- *   permissions  - 权限码列表(['adminUsers:view', 'adminUsers:add', ...])
+ *   permissions  - 路由权限列表(['GET /api/system/adminUsers/list', 'POST /api/system/adminUsers', ...])
+ *                  每项 = "METHOD /path",跟后端 admin_menu_operations 表对应
  *
  * 典型用法:
  *   import { useUserStore } from '@/stores/user'
  *   const userStore = useUserStore()
- *   userStore.hasPermission('adminUsers:add')  // 按钮权限
- *   userStore.menus                            // 左侧菜单
- *   userStore.logout()                         // 注销
+ *   userStore.hasRoute('POST', '/api/system/adminUsers')  // 新增按钮权限
+ *   userStore.menus                                       // 左侧菜单
+ *   userStore.logout()                                    // 注销
  *
  * 登录后通常一次性 setLoginData,见 views/Login/Login.vue
  */
@@ -30,12 +31,15 @@ export const useUserStore = defineStore('user', {
 
   getters: {
     /**
-     * 判断当前用户是否有指定权限
-     * @param {string} code 权限码,形如 "adminUsers:view"
+     * 判断当前用户是否有某条路由权限
+     * @param {string} method HTTP 方法(GET/POST/PUT/DELETE,大小写不敏感)
+     * @param {string} path   完整路径(可带 :id 等通配)
      * @returns {boolean}
      */
-    hasPermission: (state) => (code) => {
-      return state.permissions.includes(code)
+    hasRoute: (state) => (method, path) => {
+      if (!method || !path) return false
+      const key = method.toUpperCase() + ' ' + path
+      return state.permissions.includes(key)
     },
     /** 当前菜单树 */
     getMenus: (state) => state.menus,

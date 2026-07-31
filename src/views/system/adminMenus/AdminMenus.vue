@@ -6,7 +6,7 @@
    - 上级菜单选择(parent_id = 0 的菜单)
    - 图标选择器(用 Element Plus 全部图标)
    - 新增 / 编辑 / 删除
-   - 按钮级权限:hasPermission('adminMenus:add'/'edit'/'delete')
+   - 按钮级权限:hasRoute('POST', '/api/system/adminMenus')/'PUT'/'DELETE' 等
 
   关键点:
    - 菜单 code(如 "adminUsers")被后端用来推断权限:code:operation
@@ -193,7 +193,7 @@ onMounted(() => {
       <template #header>
         <div class="card-header">
           <span>菜单列表</span>
-          <el-button type="primary" @click="handleAdd" v-if="userStore.hasPermission('adminMenus:add')">新增菜单</el-button>
+          <el-button type="primary" @click="handleAdd" v-if="userStore.hasRoute('POST', '/api/system/adminMenus')">新增菜单</el-button>
         </div>
       </template>
 
@@ -221,8 +221,8 @@ onMounted(() => {
         <el-table-column prop="created_at" label="创建时间" />
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasPermission('adminMenus:edit')">编辑</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasPermission('adminMenus:delete')">删除</el-button>
+            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasRoute('PUT', '/api/system/adminMenus/:id')">编辑</el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasRoute('DELETE', '/api/system/adminMenus/:id')">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

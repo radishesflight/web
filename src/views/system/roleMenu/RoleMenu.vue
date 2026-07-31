@@ -1,24 +1,25 @@
 <!--
-  角色权限分配(只做"分配菜单和操作",不含角色 CRUD)
+  角色权限分配(只做"分配菜单和路由",不含角色 CRUD)
 
   数据流:
   1. AdminRoles.vue 点"分配权限"→ 把 roleId 存 Pinia → 跳到本页面
-  2. 本页面从 Pinia 拿 roleId,加载该角色的菜单和操作
+  2. 本页面从 Pinia 拿 roleId,加载该角色的菜单和路由
   3. 用户编辑后保存 → 调 assign 接口
 
   设计要点:
-  - 所有数据从后端 dynamic 拿(operations、menus),不写死
-  - 加新菜单/新操作,前端不用改代码
+  - 所有数据从后端 dynamic 拿(routes、menus),不写死
+  - 加新菜单/新接口,前端不用改代码(只要在 admin_menu_operations 表加一行)
   - 父子联动:check-strictly + 自定义级联(选父→全选子,选子→勾父)
+  - 路由按菜单分组,每行显示 [METHOD] /path - 名称
 -->
 <script setup>
 import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   getAllMenus,
   getRoleMenuIDs,
-  getRoleOperationCodes,
+  getRoleRouteIDs,
   assignMenusAndOperations
 } from '@/api/system/roleMenu'
 import { getAdminRolesList } from '@/api/system/adminRoles'
@@ -28,7 +29,6 @@ import { useRoleSelectionStore } from '@/stores/roleSelection'
 const userStore = useUserStore()
 const roleSelectionStore = useRoleSelectionStore()
 const route = useRoute()
-const router = useRouter()
 
 // 当前选中的角色(从 store 或 URL query 拿)
 const selectedRoleId = ref(null)
@@ -63,14 +63,15 @@ const switchRole = (id) => {
   loadAssignment()
 }
 
-// ============= 菜单树 + 操作权限 =============
-const allMenus = ref([])
-const selectedMenuIds = ref([])
-const menuOperationsMap = ref({}) // { menu_id: [{id, code, name, ...}] }
-const menuPermissionsMap = ref({}) // { menu_id: ['view', 'add', ...] }
+// ============= 菜单树 + 路由权限 =============
+const allMenus = ref([])               // 菜单树(给 el-tree 用)
+const selectedMenuIds = ref([])        // 已勾选的菜单 ID
+const menuRoutesMap = ref({})          // { menu_id: [{id, method, path, name}] }
+const selectedRouteIds = ref([])       // 已勾选的路由 ID
 const treeRef = ref(null)
 const saving = ref(false)
 
+// 排序后的已选菜单(树形展开成平铺,按父→子顺序)
 const sortedSelectedMenuIds = computed(() => {
   const flattenMenu = (menus) => {
     const result = []
@@ -96,36 +97,42 @@ const findMenuById = (menus, id) => {
   return null
 }
 
+// 菜单勾选联动:选父→全选子,选子→勾父,反选子→若父下已无选中子则取消父
 const handleCheck = (data, checkedObj) => {
   const isChecked = checkedObj.checkedKeys.includes(data.id)
-  const checkedSet = new Set(checkedObj.checkedKeys)
+  const menuSet = new Set(checkedObj.checkedKeys)
+  const routeSet = new Set(selectedRouteIds.value)
 
   if (isChecked) {
+    // 选父→全选子
     if (data.children && data.children.length > 0) {
       const collectAll = (nodes) => {
         nodes.forEach(n => {
-          checkedSet.add(n.id)
+          menuSet.add(n.id)
           if (n.children && n.children.length > 0) collectAll(n.children)
         })
       }
       collectAll(data.children)
     }
+    // 选子→勾父
     let parentId = data.parent_id
     while (parentId && parentId !== 0) {
-      checkedSet.add(parentId)
+      menuSet.add(parentId)
       const parent = findMenuById(allMenus.value, parentId)
       parentId = parent ? parent.parent_id : 0
     }
   } else {
+    // 取消父→全取消子
     if (data.children && data.children.length > 0) {
       const removeAll = (nodes) => {
         nodes.forEach(n => {
-          checkedSet.delete(n.id)
+          menuSet.delete(n.id)
           if (n.children && n.children.length > 0) removeAll(n.children)
         })
       }
       removeAll(data.children)
     }
+    // 取消子→看父下是否还有选中子,没有就取消父
     const tryRemoveParents = (childMenuId) => {
       const menu = findMenuById(allMenus.value, childMenuId)
       if (!menu || !menu.parent_id) return
@@ -133,40 +140,51 @@ const handleCheck = (data, checkedObj) => {
       if (!parent) return
       const siblings = parent.children || []
       const hasSelectedSibling = siblings.some(s =>
-        s.id !== childMenuId && checkedSet.has(s.id)
+        s.id !== childMenuId && menuSet.has(s.id)
       )
       if (!hasSelectedSibling) {
-        checkedSet.delete(parent.id)
+        menuSet.delete(parent.id)
         tryRemoveParents(parent.id)
       }
     }
     if (data.parent_id) tryRemoveParents(data.id)
   }
 
-  selectedMenuIds.value = [...checkedSet]
+  selectedMenuIds.value = [...menuSet]
+
+  // 菜单选中后,该菜单下所有路由自动加入
+  menuSet.forEach(menuId => {
+    const routes = menuRoutesMap.value[menuId] || []
+    routes.forEach(r => routeSet.add(r.id))
+  })
+  // 菜单取消后,该菜单下所有路由也取消
+  // (只取消"已选菜单集合"之外的菜单的路由)
+  selectedRouteIds.value = [...routeSet].filter(rid => {
+    const route = findRouteById(rid)
+    return route && menuSet.has(route.menu_id)
+  })
+
   nextTick(() => {
-    if (treeRef.value) treeRef.value.setCheckedKeys([...checkedSet], false)
-  })
-  checkedSet.forEach(menuId => {
-    if (!menuPermissionsMap.value[menuId] && menuOperationsMap.value[menuId]) {
-      menuPermissionsMap.value[menuId] = menuOperationsMap.value[menuId].map(op => op.code)
-    }
+    if (treeRef.value) treeRef.value.setCheckedKeys([...menuSet], false)
   })
 }
 
-const isOpChecked = (menuId, opCode) => {
-  return menuPermissionsMap.value[menuId]?.includes(opCode) || false
-}
-
-const toggleOp = (menuId, opCode, checked) => {
-  if (!menuPermissionsMap.value[menuId]) menuPermissionsMap.value[menuId] = []
-  if (checked) {
-    if (!menuPermissionsMap.value[menuId].includes(opCode)) {
-      menuPermissionsMap.value[menuId].push(opCode)
+const findRouteById = (id) => {
+  for (const routes of Object.values(menuRoutesMap.value)) {
+    for (const r of routes) {
+      if (r.id === id) return r
     }
-  } else {
-    menuPermissionsMap.value[menuId] = menuPermissionsMap.value[menuId].filter(c => c !== opCode)
   }
+  return null
+}
+
+const isRouteChecked = (routeId) => selectedRouteIds.value.includes(routeId)
+
+const toggleRoute = (routeId, checked) => {
+  const set = new Set(selectedRouteIds.value)
+  if (checked) set.add(routeId)
+  else set.delete(routeId)
+  selectedRouteIds.value = [...set]
 }
 
 // 把扁平 list 构建成树(根据 parent_id)
@@ -180,7 +198,6 @@ const buildMenuTree = (flat) => {
     } else if (map[m.parent_id]) {
       map[m.parent_id].children.push(map[m.id])
     } else {
-      // 孤儿节点(找不到 parent)挂根上
       roots.push(map[m.id])
     }
   }
@@ -190,19 +207,19 @@ const buildMenuTree = (flat) => {
 const fetchAllMenus = async () => {
   try {
     const res = await getAllMenus()
-    // 后端返回扁平 list,前端构树(给 el-tree 用)
     allMenus.value = buildMenuTree(res.data)
 
-    // 收集所有菜单的 operations(按 menu_id)
-    const opMap = {}
+    // 收集所有菜单的 routes(按 menu_id)
+    // 后端字段名是 "operations"(沿用),实际是 (method, path) 形式
+    const routeMap = {}
     const collect = (menus) => {
       for (const m of menus) {
-        if (m.operations && m.operations.length > 0) opMap[m.id] = m.operations
+        if (m.operations && m.operations.length > 0) routeMap[m.id] = m.operations
         if (m.children && m.children.length > 0) collect(m.children)
       }
     }
     collect(allMenus.value)
-    menuOperationsMap.value = opMap
+    menuRoutesMap.value = routeMap
   } catch (e) {
     console.error('获取菜单失败:', e)
   }
@@ -226,18 +243,15 @@ const fillParents = (ids) => {
 const loadAssignment = async () => {
   if (!selectedRoleId.value) return
   try {
+    // 1. 加载已分配的菜单
     const menuRes = await getRoleMenuIDs(selectedRoleId.value)
     let menuIds = menuRes.data.menu_ids || []
-    // 向上联动:任一子被勾,父必勾
     menuIds = fillParents(menuIds)
     selectedMenuIds.value = menuIds
 
-    const opRes = await getRoleOperationCodes(selectedRoleId.value)
-    const opMap = {}
-    for (const [k, v] of Object.entries(opRes.data.operations || {})) {
-      opMap[Number(k)] = v
-    }
-    menuPermissionsMap.value = opMap
+    // 2. 加载已分配的路由
+    const routeRes = await getRoleRouteIDs(selectedRoleId.value)
+    selectedRouteIds.value = routeRes.data.route_ids || []
   } catch (e) {
     console.error('加载角色分配失败:', e)
   }
@@ -254,14 +268,10 @@ const handleSave = async () => {
   }
   saving.value = true
   try {
-    const operations = {}
-    for (const [k, v] of Object.entries(menuPermissionsMap.value)) {
-      operations[Number(k)] = v
-    }
     await assignMenusAndOperations({
       role_id: selectedRoleId.value,
       menu_ids: selectedMenuIds.value,
-      operations
+      route_ids: selectedRouteIds.value
     })
     ElMessage.success('分配成功,使用该角色的用户需重新登录')
   } catch (e) {
@@ -292,7 +302,7 @@ watch(() => route.query.role_id, (newId) => {
     <!-- 顶部:角色选择 + 保存 -->
     <div class="page-header">
       <div class="header-left">
-        <span class="page-title">分配菜单和操作权限</span>
+        <span class="page-title">分配菜单和路由权限</span>
         <el-select
           v-if="roleList.length > 0"
           v-model="selectedRoleId"
@@ -313,7 +323,7 @@ watch(() => route.query.role_id, (newId) => {
         :loading="saving"
         :disabled="!selectedRoleId"
         @click="handleSave"
-        v-if="userStore.hasPermission('roleMenu:edit')"
+        v-if="userStore.hasRoute('PUT', '/api/system/roleMenu/assign')"
       >保存分配</el-button>
     </div>
 
@@ -337,7 +347,7 @@ watch(() => route.query.role_id, (newId) => {
         />
       </div>
       <div class="op-section">
-        <h4>选择操作权限</h4>
+        <h4>选择接口权限</h4>
         <div v-if="selectedMenuIds.length === 0" class="empty-op">请先在左侧勾选菜单</div>
         <div v-else class="op-list">
           <div
@@ -345,19 +355,23 @@ watch(() => route.query.role_id, (newId) => {
             :key="menuId"
             class="op-block"
           >
-            <template v-if="!menuOperationsMap[menuId] || menuOperationsMap[menuId].length === 0">
+            <template v-if="!menuRoutesMap[menuId] || menuRoutesMap[menuId].length === 0">
               <div class="op-menu-name">{{ findMenuById(allMenus, menuId)?.name }}</div>
-              <div class="op-no-ops">该菜单暂未配置操作</div>
+              <div class="op-no-ops">该菜单暂未配置接口</div>
             </template>
             <template v-else>
               <div class="op-menu-name">{{ findMenuById(allMenus, menuId)?.name }}</div>
               <div class="op-checkboxes">
                 <el-checkbox
-                  v-for="op in menuOperationsMap[menuId]"
-                  :key="op.id"
-                  :model-value="isOpChecked(menuId, op.code)"
-                  @update:model-value="(v) => toggleOp(menuId, op.code, v)"
-                >{{ op.name }}</el-checkbox>
+                  v-for="r in menuRoutesMap[menuId]"
+                  :key="r.id"
+                  :model-value="isRouteChecked(r.id)"
+                  @update:model-value="(v) => toggleRoute(r.id, v)"
+                >
+                  <span class="route-tag" :class="`method-${r.method.toLowerCase()}`">{{ r.method }}</span>
+                  <code class="route-path">{{ r.path }}</code>
+                  <span class="route-name">- {{ r.name }}</span>
+                </el-checkbox>
               </div>
             </template>
           </div>
@@ -430,11 +444,36 @@ watch(() => route.query.role_id, (newId) => {
 .op-menu-name { font-weight: 500; margin-bottom: 6px; }
 .op-checkboxes {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
+  flex-direction: column;
+  gap: 6px;
   padding-left: 8px;
 }
 .op-no-ops { color: #999; font-size: 12px; padding-left: 8px; }
 .empty-tip { flex: 1; display: flex; align-items: center; justify-content: center; }
 .empty-op { color: #999; padding: 20px; text-align: center; }
+
+/* 路由行的样式:方法徽章 + 路径 + 名称 */
+.route-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+  color: #fff;
+}
+.method-get    { background: #67c23a; }
+.method-post   { background: #409eff; }
+.method-put    { background: #e6a23c; }
+.method-delete { background: #f56c6c; }
+.route-path {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #606266;
+  margin-right: 4px;
+}
+.route-name {
+  color: #909399;
+  font-size: 12px;
+}
 </style>

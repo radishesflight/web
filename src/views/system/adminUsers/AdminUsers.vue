@@ -5,7 +5,7 @@
    - 列表分页(支持按 status 筛选)
    - 角色下拉(从 adminRoles 接口拉)
    - 新增 / 编辑 / 删除
-   - 按钮级权限:hasPermission('adminUsers:add'/'edit'/'delete')
+   - 按钮级权限:hasRoute('POST', '/api/system/adminUsers')/'PUT'/'DELETE' 等
 
   注意:
    - 编辑时不传 password 字段(后端 Update 不动密码)
@@ -165,7 +165,7 @@ onMounted(() => {
       <template #header>
         <div class="card-header">
           <span>管理员列表</span>
-          <el-button type="primary" @click="handleAdd" v-if="userStore.hasPermission('adminUsers:add')">新增管理员</el-button>
+          <el-button type="primary" @click="handleAdd" v-if="userStore.hasRoute('POST', '/api/system/adminUsers')">新增管理员</el-button>
         </div>
       </template>
 
@@ -193,8 +193,8 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasPermission('adminUsers:edit')">编辑</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasPermission('adminUsers:delete')">删除</el-button>
+            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasRoute('PUT', '/api/system/adminUsers/:id')">编辑</el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasRoute('DELETE', '/api/system/adminUsers/:id')">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
