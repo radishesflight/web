@@ -1,3 +1,16 @@
+<!--
+  管理员(用户)管理页
+
+  功能:
+   - 列表分页(支持按 status 筛选)
+   - 角色下拉(从 adminRoles 接口拉)
+   - 新增 / 编辑 / 删除
+   - 按钮级权限:hasPermission('adminUsers:add'/'edit'/'delete')
+
+  注意:
+   - 编辑时不传 password 字段(后端 Update 不动密码)
+   - 删除是软删除(GORM deleted_at)
+-->
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

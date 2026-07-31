@@ -1,3 +1,9 @@
+<!--
+  Dashboard 首页
+
+  目前是硬编码的 4 个统计卡片(用户/订单/商品/销售额)
+  TODO:接后端统计接口时,把 statsData 改成后端返回
+-->
 <script setup>
 import { ref } from 'vue'
 

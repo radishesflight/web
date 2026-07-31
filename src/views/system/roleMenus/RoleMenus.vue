@@ -1,3 +1,24 @@
+<!--
+  角色菜单权限分配页
+
+  功能:
+   - 角色列表(主表格)
+   - 点"分配菜单"打开对话框:
+     - 左侧 el-tree 选菜单(check-strictly,父子独立勾选)
+     - 右侧按选中的菜单显示"操作权限"checkbox
+       (查看/新增/编辑/删除/详情)
+   - 提交后自动刷新当前用户的菜单/权限缓存
+
+  关键点:
+   - 5 个 operation 是 hard-coded(view/add/edit/delete/detail)
+   - 提交格式:{ role_id, menu_ids, permissions: ['adminUsers:add', ...] }
+   - 后端会自动给每个 menu 补 <code>:view 权限
+   - 提交成功后调 getCurrentUser 刷新本地 store(避免重新登录)
+
+  注意:
+   - 顶级菜单(parent_id=0)只展示"无需配置权限"
+   - 子菜单才有 5 个操作权限 checkbox
+-->
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'

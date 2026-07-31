@@ -1,3 +1,12 @@
+<!--
+  登录页
+
+  流程:
+   1. 用户填用户名密码,点登录
+   2. 调 login API(POST /api/login)
+   3. 成功 → userStore.setLoginData + 跳首页
+   4. 失败 → axios 拦截器已经弹 toast,这里 catch 静默
+-->
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -15,6 +24,7 @@ const loginForm = ref({
 const loading = ref(false)
 
 const handleLogin = async () => {
+  // 前端校验(避免无意义请求)
   if (!loginForm.value.username || !loginForm.value.password) {
     ElMessage.warning('请输入用户名和密码')
     return
@@ -26,11 +36,14 @@ const handleLogin = async () => {
       username: loginForm.value.username,
       password: loginForm.value.password
     })
+    // res.data = { token, user, menus, permissions }
     const { token, user, menus, permissions } = res.data
+    // 一次性设置(写 store + 写 localStorage)
     userStore.setLoginData({ token, user, menus, permissions })
     ElMessage.success('登录成功')
     router.push('/')
   } catch (error) {
+    // 业务错误已经由 axios 拦截器弹了 toast,这里只 log
     console.error('登录失败:', error)
   } finally {
     loading.value = false

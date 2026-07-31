@@ -1,3 +1,15 @@
+<!--
+  角色管理页
+
+  功能:
+   - 列表分页(支持按 status 筛选)
+   - 新增 / 编辑 / 删除
+   - 按钮级权限:hasPermission('adminRoles:add'/'edit'/'delete')
+
+  注意:
+   - 删除角色前要确认(可能影响使用该角色的用户)
+   - 角色名不能重复(后端会校验返回 1009)
+-->
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'

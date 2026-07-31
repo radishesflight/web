@@ -1,3 +1,18 @@
+<!--
+  菜单管理页
+
+  功能:
+   - 列表分页(sort asc)
+   - 上级菜单选择(parent_id = 0 的菜单)
+   - 图标选择器(用 Element Plus 全部图标)
+   - 新增 / 编辑 / 删除
+   - 按钮级权限:hasPermission('adminMenus:add'/'edit'/'delete')
+
+  关键点:
+   - 菜单 code(如 "adminUsers")被后端用来推断权限:code:operation
+   - parent_id 0 = 顶级菜单(目录)
+   - 图标用 element-plus 的图标 name,存进 DB 后前端用 <component :is> 渲染
+-->
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
