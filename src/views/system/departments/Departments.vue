@@ -6,7 +6,6 @@
 -->
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDepartments } from '@/api/system/departments'
 import { useUserStore } from '@/stores/user'
 
@@ -35,7 +34,7 @@ onMounted(fetchData)
       <template #header>
         <div class="card-header">
           <span>部门列表</span>
-          <el-tag v-if="userStore.hasPermission('departments:add')" type="info" size="small">
+          <el-tag v-if="userStore.hasRoute('GET', '/api/system/departments')" type="info" size="small">
             部门 CRUD 暂未实现,先用列表展示
           </el-tag>
         </div>

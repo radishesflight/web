@@ -126,7 +126,7 @@ onMounted(fetchData)
           <span>角色列表</span>
           <el-button
             type="primary" size="small" @click="openCreate"
-            v-if="userStore.hasPermission('adminRoles:add')"
+            v-if="userStore.hasRoute('POST', '/api/system/adminRoles')"
           >+ 新增角色</el-button>
         </div>
       </template>
@@ -152,13 +152,13 @@ onMounted(fetchData)
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button size="small" link type="primary" @click="goAssign(row)"
-              v-if="userStore.hasPermission('roleMenu:view')"
+              v-if="userStore.hasRoute('GET', '/api/system/roleMenu/allMenus')"
             >分配权限</el-button>
             <el-button size="small" link type="primary" @click="openEdit(row)"
-              v-if="userStore.hasPermission('adminRoles:edit')"
+              v-if="userStore.hasRoute('PUT', '/api/system/adminRoles/:id')"
             >编辑</el-button>
             <el-button size="small" link type="danger" @click="handleDelete(row)"
-              v-if="userStore.hasPermission('adminRoles:delete')"
+              v-if="userStore.hasRoute('DELETE', '/api/system/adminRoles/:id')"
             >删除</el-button>
           </template>
         </el-table-column>

@@ -1,40 +1,41 @@
 /**
  * 权限判断工具
  *
- * 提供三个工具函数(底层都用 useUserStore):
- * - hasPermission(code):单个权限码判断
- * - hasAnyPermission(codes):多个权限码任一满足
+ * 提供以下工具函数(底层都用 useUserStore):
+ * - hasRoute(method, path):判断用户是否有某条 (method, path) 路由权限
+ * - hasAnyRoute(routes):判断用户是否拥有任一 (method, path) 路由
  * - hasDataScope(scope):数据范围判断(0=全部/1=部门/2=自己)
  *
  * 用法(template):
- *   <el-button v-if="userStore.hasPermission('adminUsers:add')">新增</el-button>
- *   <span v-if="userStore.hasDataScope(1)">部门数据</span>
+ *   <el-button v-if="userStore.hasRoute('POST', '/api/system/adminUsers')">新增</el-button>
+ *   <span v-if="hasDataScope(1)">部门数据</span>
  *
  * 也可以在 <script setup> 里:
- *   import { hasPermission, hasDataScope } from '@/utils/permission'
- *   if (hasPermission('adminUsers:delete')) { ... }
+ *   import { hasRoute, hasDataScope } from '@/utils/permission'
+ *   if (hasRoute('DELETE', '/api/system/adminUsers/:id')) { ... }
  */
 
 import { useUserStore } from '@/stores/user'
 
 /**
- * 判断当前用户是否有指定权限
- * @param {string} code 权限码,形如 "adminUsers:view"
+ * 判断当前用户是否有指定路由权限
+ * @param {string} method HTTP 方法(GET/POST/PUT/DELETE,大小写不敏感)
+ * @param {string} path   完整路径(可带 :id 等通配)
  * @returns {boolean}
  */
-export function hasPermission(code) {
+export function hasRoute(method, path) {
   const userStore = useUserStore()
-  return userStore.hasPermission(code)
+  return userStore.hasRoute(method, path)
 }
 
 /**
- * 判断当前用户是否有任一权限
- * @param {string[]} codes 权限码列表
+ * 判断当前用户是否有任一指定路由权限
+ * @param {Array<{method: string, path: string}>} routes 路由列表
  * @returns {boolean} 任一满足即 true
  */
-export function hasAnyPermission(codes) {
+export function hasAnyRoute(routes) {
   const userStore = useUserStore()
-  return codes.some(code => userStore.permissions.includes(code))
+  return routes.some(r => userStore.hasRoute(r.method, r.path))
 }
 
 /**

@@ -1,21 +1,22 @@
 /**
- * 角色-菜单-操作 分配 API
+ * 角色-菜单-路由 分配 API
  *
- * 接口(路径跟 menu.code "roleMenu" 一致,中间件推断 roleMenu:*):
- *   GET  /api/system/roleMenu/allMenus                所有菜单(带 operations)
- *   GET  /api/system/roleMenu/roleMenus?role_id       某角色已分配的菜单 ID
- *   GET  /api/system/roleMenu/roleOperations?role_id  某角色已分配的操作(按 menu_id 分组)
- *   POST /api/system/roleMenu/assign                  分配 {role_id, menu_ids, operations}
+ * 接口(中间件按 (method, c.FullPath()) 直接匹配):
+ *   GET  /api/system/roleMenu/allMenus            所有菜单(带 routes)
+ *   GET  /api/system/roleMenu/roleMenus?role_id   某角色已分配的菜单 ID
+ *   GET  /api/system/roleMenu/roleRoutes?role_id  某角色已分配的路由 ID
+ *   PUT  /api/system/roleMenu/assign              分配 {role_id, menu_ids, route_ids}
  *
- * 注意:这是新融合单页面的核心 API,替代旧的 adminRoles/roleMenus/*
+ * route 是 admin_menu_operations 表里的一行(method + path 一条具体接口)
+ * 角色-路由关联存 admin_role_operations
  */
 
 import request from '@/utils/request'
 
 /**
- * 所有菜单(带 operations)
+ * 所有菜单(带 routes)
  * 给"分配菜单"对话框左侧 el-tree 用
- * @returns {Promise<{data: Array<{id, name, code, parent_id, operations: Array<{id, code, name}>}>}>}
+ * @returns {Promise<{data: Array<{id, name, code, parent_id, operations: Array<{id, method, path, name}>}>}>}
  */
 export function getAllMenus() {
   return request({
@@ -38,30 +39,28 @@ export function getRoleMenuIDs(roleId) {
 }
 
 /**
- * 某角色已分配的操作(按 menu_id 分组)
- * 返回 {operations: { menu_id: [operation_code, ...] }}
+ * 某角色已分配的路由 ID
  * @param {number} roleId
- * @returns {Promise<{data: {operations: Object<number, string[]>}}>}
+ * @returns {Promise<{data: {route_ids: number[]}}>}
  */
-export function getRoleOperationCodes(roleId) {
+export function getRoleRouteIDs(roleId) {
   return request({
-    url: '/api/system/roleMenu/roleOperations',
+    url: '/api/system/roleMenu/roleRoutes',
     method: 'get',
     params: { role_id: roleId }
   })
 }
 
 /**
- * 分配菜单和操作
- * @param {{role_id, menu_ids: number[], operations: Object<number, string[]>}} data
- *   operations 的 key 是 menu_id(数字),value 是 operation_code 数组
- *   例: { 10: ['view', 'add'], 11: ['view', 'edit'] }
+ * 分配菜单和路由
+ * @param {{role_id: number, menu_ids: number[], route_ids: number[]}} data
+ *   route_ids 是 admin_menu_operations.id 的列表
  * @returns {Promise<{data: null}>}
  */
 export function assignMenusAndOperations(data) {
   return request({
     url: '/api/system/roleMenu/assign',
-    method: 'post',
+    method: 'put',
     data
   })
 }
