@@ -60,7 +60,7 @@ export function getMenusByRoleWithNames(roleId) {
 export function assignMenusToRole(data) {
   return request({
     url: '/api/system/adminRoles/roleMenus',
-    method: 'post',
+    method: 'put',
     data
   })
 }
