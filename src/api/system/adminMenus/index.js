@@ -1,14 +1,15 @@
 /**
  * 菜单管理 API
  *
- * 接口:
- *   GET    /api/system/adminMenus/list      列表分页(sort asc)
- *   GET    /api/system/adminMenus/all       所有菜单(sort DESC,角色分配用)
- *   GET    /api/system/adminMenus/options   parent_id=0 的菜单(上级下拉)
- *   GET    /api/system/adminMenus/:id       单条
- *   POST   /api/system/adminMenus           新增
- *   PUT    /api/system/adminMenus/:id       更新
- *   DELETE /api/system/adminMenus/:id       删除
+ * 接口(路径跟 menu.code 一致,中间件推断 adminMenus:*):
+ *   GET    /api/system/adminMenus/list              列表分页
+ *   GET    /api/system/adminMenus/all               所有菜单(带 operations,角色分配用)
+ *   GET    /api/system/adminMenus/options           parent_id=0 的菜单
+ *   GET    /api/system/adminMenus/operations/:menu_id  某菜单的所有 operation
+ *   GET    /api/system/adminMenus/:id               单条
+ *   POST   /api/system/adminMenus                   新增
+ *   PUT    /api/system/adminMenus/:id               更新
+ *   DELETE /api/system/adminMenus/:id               删除
  */
 
 import request from '@/utils/request'
@@ -27,8 +28,7 @@ export function getAdminMenusList(params) {
 }
 
 /**
- * 上级菜单选项(parent_id = 0 的)
- * 用在"新增/编辑菜单"对话框里选上级
+ * 父级菜单下拉选项
  * @returns {Promise<{data: Array<{id, name}>}>}
  */
 export function getAdminMenusOptions() {
@@ -51,8 +51,20 @@ export function getAdminMenus(id) {
 }
 
 /**
+ * 某菜单的所有 operation(动态,后端从 admin_menu_operations 表读)
+ * @param {number} menuId
+ * @returns {Promise<{data: Array<{id, menu_id, code, name, icon, sort}>}>}
+ */
+export function getMenuOperations(menuId) {
+  return request({
+    url: `/api/system/adminMenus/operations/${menuId}`,
+    method: 'get'
+  })
+}
+
+/**
  * 新增
- * @param {{name, code, path, icon, parent_id, sort, status, buttons}} data
+ * @param {{name, code, path, icon, parent_id, sort, status, data_scope}} data
  * @returns {Promise<{data: Object}>}
  */
 export function createAdminMenus(data) {
@@ -64,9 +76,9 @@ export function createAdminMenus(data) {
 }
 
 /**
- * 更新(注意:空字符串/0 也会写入 DB,与 adminRoles 的"不更新"行为不一致)
+ * 更新
  * @param {number} id
- * @param {{name, code, path, icon, parent_id, sort, status, buttons}} data
+ * @param {{name, code, path, icon, parent_id, sort, status, data_scope}} data
  * @returns {Promise<{data: Object}>}
  */
 export function updateAdminMenus(id, data) {
@@ -86,19 +98,5 @@ export function deleteAdminMenus(id) {
   return request({
     url: `/api/system/adminMenus/${id}`,
     method: 'delete'
-  })
-}
-
-/**
- * 更新菜单按钮(预留,后端 handler 还没接)
- * @param {number} id
- * @param {Object} data
- * @returns {Promise<{data: Object}>}
- */
-export function updateMenuButtons(id, data) {
-  return request({
-    url: `/api/system/adminMenus/${id}/buttons`,
-    method: 'put',
-    data
   })
 }

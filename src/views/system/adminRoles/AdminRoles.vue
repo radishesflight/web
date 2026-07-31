@@ -1,39 +1,35 @@
 <!--
-  角色管理页
+  角色管理(只角色 CRUD)
 
-  功能:
-   - 列表分页(支持按 status 筛选)
-   - 新增 / 编辑 / 删除
-   - 按钮级权限:hasPermission('roleMenu:add'/'edit'/'delete')
-
-  注意:
-   - 删除角色前要确认(可能影响使用该角色的用户)
-   - 角色名不能重复(后端会校验返回 1009)
+  设计:
+  - 纯角色列表 + 增删改查
+  - 数据范围(0=全部/1=部门/2=自己)在编辑对话框里选
+  - 选角色后,把 roleId 存到 Pinia,跳转"权限分配"页
 -->
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminRolesList, createAdminRoles, updateAdminRoles, deleteAdminRoles } from '@/api/system/adminRoles'
+import {
+  getAdminRolesList,
+  createAdminRoles,
+  updateAdminRoles,
+  deleteAdminRoles
+} from '@/api/system/adminRoles'
 import { useUserStore } from '@/stores/user'
+import { useRoleSelectionStore } from '@/stores/roleSelection'
 
 const userStore = useUserStore()
+const roleSelectionStore = useRoleSelectionStore()
+const router = useRouter()
 
-const tableData = ref([])
+const list = ref([])
 const loading = ref(false)
-const pagination = ref({
-  page: 1,
-  size: 10,
-  total: 0
-})
+const pagination = ref({ page: 1, size: 10, total: 0 })
 
 const dialogVisible = ref(false)
 const dialogTitle = ref('新增角色')
-const formData = ref({
-  id: null,
-  name: '',
-  describe: '',
-  status: 1
-})
+const form = ref({ id: 0, name: '', describe: '', status: 1, data_scope: 0 })
 
 const fetchData = async () => {
   loading.value = true
@@ -42,81 +38,84 @@ const fetchData = async () => {
       page: pagination.value.page,
       size: pagination.value.size
     })
-    tableData.value = res.data.list
+    list.value = res.data.list
     pagination.value.total = res.data.total
-  } catch (error) {
-    console.error('获取列表失败:', error)
+  } catch (e) {
+    console.error('获取角色失败:', e)
   } finally {
     loading.value = false
   }
 }
 
-const handleAdd = () => {
+const openCreate = () => {
+  form.value = { id: 0, name: '', describe: '', status: 1, data_scope: 0 }
   dialogTitle.value = '新增角色'
-  formData.value = {
-    id: null,
-    name: '',
-    describe: '',
-    status: 1
-  }
   dialogVisible.value = true
 }
 
-const handleEdit = (row) => {
-  dialogTitle.value = '编辑角色'
-  formData.value = {
+const openEdit = (row) => {
+  form.value = {
     id: row.id,
     name: row.name,
-    describe: row.describe,
-    status: row.status
+    describe: row.describe || '',
+    status: row.status,
+    data_scope: row.data_scope ?? 0
   }
+  dialogTitle.value = '编辑角色'
   dialogVisible.value = true
 }
 
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定删除角色 ${row.name} 吗？`, '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    try {
-      await deleteAdminRoles(row.id)
-      ElMessage.success('删除成功')
-      fetchData()
-    } catch (error) {
-      console.error('删除失败:', error)
-    }
-  })
-}
-
-const handleSubmit = async () => {
+const submit = async () => {
+  if (!form.value.name) {
+    ElMessage.warning('请输入角色名')
+    return
+  }
   try {
-    if (!formData.value.name) {
-      ElMessage.warning('请输入角色名称')
-      return
-    }
-    const data = {
-      name: formData.value.name,
-      describe: formData.value.describe,
-      status: formData.value.status
-    }
-    if (!formData.value.id) {
-      await createAdminRoles(data)
+    if (form.value.id === 0) {
+      await createAdminRoles({
+        name: form.value.name,
+        describe: form.value.describe,
+        status: form.value.status,
+        data_scope: form.value.data_scope
+      })
       ElMessage.success('创建成功')
     } else {
-      await updateAdminRoles(formData.value.id, data)
+      await updateAdminRoles(form.value.id, {
+        name: form.value.name,
+        describe: form.value.describe,
+        status: form.value.status,
+        data_scope: form.value.data_scope
+      })
       ElMessage.success('更新成功')
     }
     dialogVisible.value = false
     fetchData()
-  } catch (error) {
-    console.error('操作失败:', error)
+  } catch (e) {
+    console.error('保存失败:', e)
   }
 }
 
-onMounted(() => {
-  fetchData()
-})
+const handleDelete = (row) => {
+  ElMessageBox.confirm(`确定删除角色"${row.name}"?`, '提示', { type: 'warning' })
+    .then(async () => {
+      try {
+        await deleteAdminRoles(row.id)
+        ElMessage.success('删除成功')
+        fetchData()
+      } catch (e) {
+        console.error('删除失败:', e)
+      }
+    })
+    .catch(() => {})
+}
+
+// 跳到"权限分配"页
+const goAssign = (row) => {
+  roleSelectionStore.setSelectedRoleId(row.id)
+  router.push('/system/roleMenu')
+}
+
+onMounted(fetchData)
 </script>
 
 <template>
@@ -125,62 +124,91 @@ onMounted(() => {
       <template #header>
         <div class="card-header">
           <span>角色列表</span>
-          <el-button type="primary" @click="handleAdd" v-if="userStore.hasPermission('roleMenu:add')">新增角色</el-button>
+          <el-button
+            type="primary" size="small" @click="openCreate"
+            v-if="userStore.hasPermission('adminRoles:add')"
+          >+ 新增角色</el-button>
         </div>
       </template>
 
-      <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="角色名称" />
-        <el-table-column prop="describe" label="描述" />
-        <el-table-column prop="status" label="状态" width="100">
+      <el-table :data="list" v-loading="loading" stripe>
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="describe" label="描述" min-width="120" show-overflow-tooltip />
+        <el-table-column label="数据范围" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
+            <el-tag size="small" :type="row.data_scope === 0 ? 'success' : (row.data_scope === 1 ? 'warning' : 'info')">
+              {{ ['全部', '部门', '自己'][row.data_scope] || '全部' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
               {{ row.status === 1 ? '启用' : '禁用' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" />
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasPermission('roleMenu:edit')">编辑</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasPermission('roleMenu:delete')">删除</el-button>
+            <el-button size="small" link type="primary" @click="goAssign(row)"
+              v-if="userStore.hasPermission('roleMenu:view')"
+            >分配权限</el-button>
+            <el-button size="small" link type="primary" @click="openEdit(row)"
+              v-if="userStore.hasPermission('adminRoles:edit')"
+            >编辑</el-button>
+            <el-button size="small" link type="danger" @click="handleDelete(row)"
+              v-if="userStore.hasPermission('adminRoles:delete')"
+            >删除</el-button>
           </template>
         </el-table-column>
       </el-table>
+
+      <el-pagination
+        v-model:current-page="pagination.page"
+        v-model:page-size="pagination.size"
+        :total="pagination.total"
+        :page-sizes="[10, 20, 50]"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="fetchData"
+        @size-change="fetchData"
+        style="margin-top: 16px; justify-content: flex-end;"
+      />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
-      <el-form :model="formData" label-width="80px">
-        <el-form-item label="角色名称">
-          <el-input v-model="formData.name" placeholder="请输入角色名称" />
+      <el-form :model="form" label-width="100px">
+        <el-form-item label="角色名" required>
+          <el-input v-model="form.name" placeholder="例如:测试员" />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="formData.describe" placeholder="请输入描述" type="textarea" />
+          <el-input v-model="form.describe" placeholder="角色用途说明" />
+        </el-form-item>
+        <el-form-item label="数据范围">
+          <el-radio-group v-model="form.data_scope">
+            <el-radio :value="0">看全部</el-radio>
+            <el-radio :value="1">看部门</el-radio>
+            <el-radio :value="2">看自己</el-radio>
+          </el-radio-group>
+          <div class="form-tip">决定该角色能查询的数据范围</div>
         </el-form-item>
         <el-form-item label="状态">
-          <el-radio-group v-model="formData.status">
-            <el-radio :label="1">启用</el-radio>
-            <el-radio :label="0">禁用</el-radio>
+          <el-radio-group v-model="form.status">
+            <el-radio :value="1">启用</el-radio>
+            <el-radio :value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.page-container {
-  padding: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.page-container { padding: 20px; }
+.card-header { display: flex; justify-content: space-between; align-items: center; }
+.form-tip { font-size: 12px; color: #999; margin-top: 4px; }
 </style>
