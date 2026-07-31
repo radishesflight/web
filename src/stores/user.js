@@ -42,7 +42,25 @@ export const useUserStore = defineStore('user', {
     /** 当前用户信息 */
     getUser: (state) => state.user,
     /** 是否已登录(token 非空) */
-    isLoggedIn: (state) => !!state.token
+    isLoggedIn: (state) => !!state.token,
+    /**
+     * 当前用户数据范围(0=全部 1=部门 2=自己)
+     * 来源:后端 LoginResp.user.data_scope
+     */
+    dataScope: (state) => state.user?.data_scope ?? 0,
+    /** 当前用户部门 ID(给"看部门"用) */
+    departmentId: (state) => state.user?.department_id ?? 0,
+    /**
+     * 判断当前用户数据范围是否"覆盖"指定 scope
+     * 0=全部 / 1=部门 / 2=自己
+     * 数字越小权限越大:0 覆盖 1 和 2,1 覆盖 2
+     * @param {number} requiredScope 需要的最低范围
+     * @returns {boolean}
+     */
+    hasDataScope: (state) => (requiredScope) => {
+      const userScope = state.user?.data_scope ?? 0
+      return userScope <= requiredScope
+    }
   },
 
   actions: {
