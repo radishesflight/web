@@ -80,11 +80,12 @@ export function getPermissionsByRole(roleId) {
 
 /**
  * 所有菜单(用于"分配菜单"对话框左侧的 el-tree)
+ * 路由在 adminRoles 下,因为业务属于"角色菜单权限"功能,推断为 roleMenu:view
  * @returns {Promise<{data: Array}>} 扁平 list,前端用 buildMenuTree 构树
  */
 export function getAllMenus() {
   return request({
-    url: '/api/system/adminMenus/all',
+    url: '/api/system/adminRoles/allMenus',
     method: 'get'
   })
 }

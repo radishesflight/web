@@ -4,7 +4,7 @@
   功能:
    - 角色列表(主表格)
    - 点"分配菜单"打开对话框:
-     - 左侧 el-tree 选菜单(check-strictly,父子独立勾选)
+     - 左侧 el-tree 选菜单(父子联动:选父全选子、选子自动选父)
      - 右侧按选中的菜单显示"操作权限"checkbox
        (查看/新增/编辑/删除/详情)
    - 提交后自动刷新当前用户的菜单/权限缓存
@@ -20,7 +20,7 @@
    - 子菜单才有 5 个操作权限 checkbox
 -->
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getRoleMenuList, getMenusByRole, getMenusByRoleWithNames, assignMenusToRole, getAllMenus, getPermissionsByRole } from '@/api/system/roleMenu'
 import { getCurrentUser } from '@/api/auth'
@@ -133,11 +133,77 @@ const sortedSelectedMenuIds = computed(() => {
 })
 
 const handleMenuCheck = (data, checkedObj) => {
-  // 直接使用 el-tree 返回的 checkedKeys，它已经处理了父子联动
-  selectedMenuIds.value = [...checkedObj.checkedKeys]
+  // 用 check-strictly 关闭 element-plus 默认的"半选"联动
+  // 自己维护双向级联:选父→全选子,选子→勾父(不是半选,是真勾)
+  const isChecked = checkedObj.checkedKeys.includes(data.id)
+  const checkedSet = new Set(checkedObj.checkedKeys)
 
-  // 初始化新选中菜单的权限，只对非顶级菜单
-  checkedObj.checkedKeys.forEach(menuId => {
+  if (isChecked) {
+    // 向下级联:选父节点 → 全选所有子节点(递归)
+    if (data.children && data.children.length > 0) {
+      const collectAllIds = (nodes) => {
+        nodes.forEach(n => {
+          checkedSet.add(n.id)
+          if (n.children && n.children.length > 0) {
+            collectAllIds(n.children)
+          }
+        })
+      }
+      collectAllIds(data.children)
+    }
+
+    // 向上级联:选子节点 → 勾选所有父节点(向上递归)
+    let parentId = data.parent_id
+    while (parentId && parentId !== 0) {
+      checkedSet.add(parentId)
+      const parent = findMenuById(allMenus.value, parentId)
+      parentId = parent ? parent.parent_id : 0
+    }
+  } else {
+    // 取消:如果取消的是父节点 → 同时取消所有子节点
+    if (data.children && data.children.length > 0) {
+      const removeAllIds = (nodes) => {
+        nodes.forEach(n => {
+          checkedSet.delete(n.id)
+          if (n.children && n.children.length > 0) {
+            removeAllIds(n.children)
+          }
+        })
+      }
+      removeAllIds(data.children)
+    }
+
+    // 取消:如果子节点都取消完了 → 父也取消(向上递归)
+    const tryRemoveParents = (childMenuId) => {
+      const menu = findMenuById(allMenus.value, childMenuId)
+      if (!menu || !menu.parent_id) return
+      const parent = findMenuById(allMenus.value, menu.parent_id)
+      if (!parent) return
+      const siblings = parent.children || []
+      const hasSelectedSibling = siblings.some(s =>
+        s.id !== childMenuId && checkedSet.has(s.id)
+      )
+      if (!hasSelectedSibling) {
+        checkedSet.delete(parent.id)
+        tryRemoveParents(parent.id)
+      }
+    }
+    if (data.parent_id) {
+      tryRemoveParents(data.id)
+    }
+  }
+
+  selectedMenuIds.value = [...checkedSet]
+
+  // 同步到 el-tree UI(强制 setCheckedKeys,父节点是"勾选"不是 element-plus 默认的"半选")
+  nextTick(() => {
+    if (menuTreeRef.value) {
+      menuTreeRef.value.setCheckedKeys([...checkedSet], false)
+    }
+  })
+
+  // 初始化新选中菜单的权限,只对非顶级菜单,且该菜单之前没权限记录
+  checkedSet.forEach(menuId => {
     if (!menuPermissionsMap.value[menuId]) {
       const menu = findMenuById(allMenus.value, menuId)
       if (menu && menu.parent_id !== 0) {
@@ -302,7 +368,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleMenuAuth(row)" v-if="userStore.hasPermission('adminRoles:edit')">分配菜单</el-button>
+            <el-button type="primary" size="small" @click="handleMenuAuth(row)" v-if="userStore.hasPermission('roleMenu:edit')">分配菜单</el-button>
           </template>
         </el-table-column>
       </el-table>

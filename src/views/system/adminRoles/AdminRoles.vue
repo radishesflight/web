@@ -4,7 +4,7 @@
   功能:
    - 列表分页(支持按 status 筛选)
    - 新增 / 编辑 / 删除
-   - 按钮级权限:hasPermission('adminRoles:add'/'edit'/'delete')
+   - 按钮级权限:hasPermission('roleMenu:add'/'edit'/'delete')
 
   注意:
    - 删除角色前要确认(可能影响使用该角色的用户)
@@ -125,7 +125,7 @@ onMounted(() => {
       <template #header>
         <div class="card-header">
           <span>角色列表</span>
-          <el-button type="primary" @click="handleAdd" v-if="userStore.hasPermission('adminRoles:add')">新增角色</el-button>
+          <el-button type="primary" @click="handleAdd" v-if="userStore.hasPermission('roleMenu:add')">新增角色</el-button>
         </div>
       </template>
 
@@ -143,8 +143,8 @@ onMounted(() => {
         <el-table-column prop="created_at" label="创建时间" />
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasPermission('adminRoles:edit')">编辑</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasPermission('adminRoles:delete')">删除</el-button>
+            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasPermission('roleMenu:edit')">编辑</el-button>
+            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasPermission('roleMenu:delete')">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
