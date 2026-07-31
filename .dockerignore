@@ -1,0 +1,41 @@
+# =====================================================
+# 前端 .dockerignore - 减少构建上下文大小
+# =====================================================
+
+# 依赖(容器内 npm install)
+node_modules/
+
+# git
+.git/
+.gitignore
+.gitattributes
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 构建产物(容器内 vite build 生成)
+dist/
+
+# 测试覆盖
+coverage/
+*.local
+
+# 日志
+*.log
+logs/
+
+# Docker 自己
+Dockerfile
+.dockerignore
+
+# 环境变量
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
