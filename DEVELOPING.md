@@ -177,7 +177,7 @@ onMounted(() => { fetchData() })
         <el-table-column label="操作" width="180">
           <template #default="{ row }">
             <el-button
-              v-if="userStore.hasPermission('orders:edit')"
+              v-if="userStore.hasRoute('DELETE', '/api/system/orders/:id')"
               type="danger" size="small"
               @click="handleDelete(row)"
             >删除</el-button>
@@ -232,13 +232,27 @@ const routes = [
 
 (详见后端 `go_server/DEVELOPING.md`)
 
-### 步骤 5:权限 key
-后端的 `PermissionMiddleware` 会从 URL path 推断权限:
-- `GET /api/system/orders/list` → `orders:view`
-- `POST /api/system/orders` → `orders:add`
-- `DELETE /api/system/orders/:id` → `orders:delete`
+### 步骤 5:权限 key(⭐ 重要)
+权限码 = `"<HTTP 方法> <完整路径>"`,**没有**"推断"这一步,直接是 (method, path) 拼接。
 
-在 `RoleMenu.vue` 给角色分配"orders:view"等权限,前端 `hasPermission('orders:view')` 才生效。
+举例:
+- `GET /api/system/orders/list` → 权限码 `"GET /api/system/orders/list"`
+- `POST /api/system/orders` → 权限码 `"POST /api/system/orders"`
+- `DELETE /api/system/orders/:id` → 权限码 `"DELETE /api/system/orders/:id"`
+
+**加新接口时**:
+1. 后端 `internal/router/system/orders.go` 加 gin 路由(挂 PermissionMiddleware)
+2. 重启服务,`SyncRoutes` 会**自动**把 (method, path) INSERT 到 `admin_menu_operations`
+   (要求 path 段 `/api/system/orders` 跟 `admin_menus.code = "orders"` 对应)
+3. 在 `admin_menus` 表里给 `code="orders"` 的菜单分配给需要的角色
+4. 在"角色权限分配"页(`/system/roleMenu`)给该角色**勾上**对应的 operation
+
+**前端判断权限**:
+```vue
+<el-button v-if="userStore.hasRoute('POST', '/api/system/orders')">新增订单</el-button>
+```
+
+`hasRoute(method, path)` 等价于 `userStore.permissions.includes(method+' '+path)`,严格大小写不敏感(内部都大写)。
 
 ---
 
@@ -297,18 +311,23 @@ const userStore = useUserStore()
 // state
 userStore.token         // 当前 token
 userStore.user          // 用户信息(LoginResp.user)
-userStore.menus         // 菜单树(后端返回)
-userStore.permissions   // 权限码列表 ['adminUsers:view', ...]
+userStore.menus         // 菜单树(后端返回,树形)
+userStore.permissions   // 权限码列表 ['GET /api/system/adminUsers/list', 'POST /api/system/adminUsers', ...]
+                        //  每项 = "METHOD /path",跟后端 admin_menu_operations 一一对应
 
 // getters
-userStore.isLoggedIn   // !!token
-userStore.getUser       // user
-userStore.getMenus      // menus
-userStore.hasPermission('adminUsers:add')  // 权限判断
+userStore.isLoggedIn          // !!token
+userStore.getUser             // user
+userStore.getMenus            // menus
+userStore.dataScope           // 当前用户数据范围(0=全部 1=部门 2=自己)
+userStore.departmentId        // 当前用户部门 ID
+userStore.hasRoute('POST', '/api/system/adminUsers')    // 路由权限判断
+userStore.hasDataScope(1)     // 数据范围判断
 
 // actions
 userStore.setLoginData({ token, user, menus, permissions })  // 登录后一次性设置
-userStore.logout()       // 清空所有
+userStore.logout()       // 清空所有(包含 localStorage)
+userStore.refreshUserInfo()  // 静默从后端重新拉 user/menus/permissions(配合 main.js 的 focus 监听)
 ```
 
 ### 加新 store
@@ -320,18 +339,22 @@ userStore.logout()       // 清空所有
 
 ## 6. 权限控制(2 步)
 
-### 6.1 菜单权限(后端控制 + 前端隐藏)
+### 6.1 按钮权限(后端控制 + 前端隐藏)
 
-后端 `RoleMenu.vue` 给角色分配 `adminUsers:view` 等权限码,用户登录后 `userStore.permissions` 包含这些码。
+后端在 `admin_menu_operations` 表登记每个具体接口(method + path),并在 `admin_role_operations` 里给角色关联。`RoleMenu.vue` 页就是给角色分配这些 operation 的界面。
+
+用户登录后,`userStore.permissions` 包含该用户角色的所有 operation(每项 = `"METHOD /path"`)。
 
 前端 view 里用 `v-if` 隐藏按钮:
 
 ```vue
 <el-button
-  v-if="userStore.hasPermission('adminUsers:add')"
+  v-if="userStore.hasRoute('POST', '/api/system/adminUsers')"
   @click="handleAdd"
 >新增</el-button>
 ```
+
+注意是 `hasRoute(method, path)`,**不是** `hasPermission('xxx:yyy')`(后者是旧版 API,已废弃)。
 
 ### 6.2 路由权限(前端守卫)
 
@@ -385,7 +408,7 @@ describe('myFunction', () => {
 | 业务码 | 大写分组,见 `constants/bizcode.js` | `BizCode.UserNotFound` |
 | 路由 path | 蛇形,复数 | `/system/orders` |
 | 路由 name | 大驼峰 | `'Orders'` |
-| 权限码 | `<menu>:<operation>` | `adminUsers:view` |
+| 权限码 | `"<METHOD> <path>"`(完整接口) | `"POST /api/system/adminUsers"` |
 
 ---
 
@@ -444,7 +467,11 @@ A: `vite.config.js` 的 proxy 是否配了 `/api → VITE_API_TARGET`
 A: 401/1002/1003:token 过期或不正确,清 localStorage 重登
 
 ### Q: 按钮不显示?
-A: `userStore.permissions` 是不是有对应权限码。后端要分配,前端才能 `hasPermission` 返回 true
+A: `userStore.permissions` 是不是有对应权限码。后端要分配,前端才能 `hasRoute(method, path)` 返回 true。
+具体排查:
+1. `admin_menu_operations` 表里有没有这条 (method, path) — 没有就是路由没注册或 SyncRoutes 没跑
+2. `admin_role_operations` 里有没有把这条 route 分配给该用户的角色 — 没有就去 `/system/roleMenu` 页勾
+3. 给该角色勾上后,**该用户的 token 会在下次请求时自动懒重载**(等几秒)
 
 ### Q: dev 修改代码,浏览器不更新?
 A: Vite HMR 有时候失效,刷新一下浏览器;import 路径错的话改完得重启 `npm run dev`
