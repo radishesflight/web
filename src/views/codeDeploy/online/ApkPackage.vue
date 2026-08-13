@@ -9,18 +9,18 @@
       - 选项目节点 -> 项目信息
       - 选端节点 -> 该端下的代码包列表 + 选包 + 拉取
 
-  假数据,后续接接口:
-    - tree        GET /api/codeDeploy/tree   返回业务项目 + 端层级
-    - packages    GET /api/codeDeploy/endpoints/packages?project_id=&endpoint=
-    - pull        POST /api/codeDeploy/endpoints/pull {project_id, endpoint, pkg_id}
-    - upload      POST /api/codeDeploy/packages  FormData {project_id, endpoint, type, file, ...}
-                  (后端自动生成版本号 + 包名,返回 {id, name, time, size, author, url})
+  数据来源:后端 API
+    - tree        GET /api/codeDeploy/projects/tree
+    - packages    GET /api/codeDeploy/packages?project_id=&endpoint_id=
+    - pull        POST /api/codeDeploy/packages/:id/pull
+    - upload      POST /api/codeDeploy/packages
+                  (后端自动生成 version + 拼接 full_name,返回 {id, full_name, file_url, ...})
+    - endpoints   GET /api/codeDeploy/endpoints(端字典,弹窗下拉用)
 -->
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search,
   Refresh,
   Promotion,
   Folder,
@@ -32,116 +32,57 @@ import {
   Monitor as Pc,
   Setting
 } from '@element-plus/icons-vue'
+import {
+  getEndpoints,
+  getProjectTree,
+  getPackages,
+  uploadPackage,
+  pullPackage
+} from '@/api/codeDeploy'
+import JSZip from 'jszip'
+
+// 前端文件夹总大小限制(超过就拦下,后端 200MB 硬限制)
+const FOLDER_SIZE_LIMIT = 300 * 1024 * 1024
 
 // =====================================================
-// 假数据
+// 图标映射(后端 code_endpoints.icon 字符串 -> el-icon 组件)
 // =====================================================
-
-// 4 个固定端(全量端列表,树里按业务需要只展示其中部分)
-const ALL_ENDPOINTS = [
-  { name: '苹果', ext: 'apk', icon: Iphone, slug: 'ios' },
-  { name: '安卓', ext: 'apk', icon: Cellphone, slug: 'android' },
-  { name: '前台web', ext: 'zip', icon: Pc, slug: 'web' },
-  { name: '后台web', ext: 'zip', icon: Setting, slug: 'admin' }
-]
-
-// 业务项目(树父节点) - 每个项目声明自己有哪些端
-const mockProjects = [
-  { id: 'p-001', name: 'b2b电商项目', endpoints: ['苹果', '安卓', '前台web', '后台web'] },
-  { id: 'p-002', name: '云红erp', endpoints: ['前台web', '后台web'] },
-  { id: 'p-003', name: '点药小程序', endpoints: ['苹果', '安卓'] },
-  { id: 'p-004', name: '云红直播', endpoints: ['苹果', '安卓', '前台web'] },
-  { id: 'p-005', name: '点药官网', endpoints: ['前台web', '后台web'] },
-  { id: 'p-006', name: '云红控销', endpoints: ['安卓', '后台web'] },
-  { id: 'p-007', name: '点药支付中心', endpoints: ['后台web'] },
-  { id: 'p-008', name: '云红会员系统', endpoints: ['苹果', '安卓', '后台web'] },
-  { id: 'p-009', name: '点药订单中台', endpoints: ['后台web'] },
-  { id: 'p-010', name: '云红数据中台', endpoints: ['后台web'] },
-  { id: 'p-011', name: '点药财务系统', endpoints: ['后台web'] },
-  { id: 'p-012', name: '云红客服系统', endpoints: ['苹果', '安卓'] }
-]
-
-function buildTree() {
-  return mockProjects.map(p => ({
-    id: `project:${p.id}`,
-    label: p.name,
-    raw: p,
-    children: p.endpoints.map(epName => {
-      const ep = ALL_ENDPOINTS.find(e => e.name === epName)
-      return {
-        id: `endpoint:${p.id}:${epName}`,
-        label: epName,
-        raw: { project: p, endpoint: ep }
-      }
-    })
-  }))
+const ICON_MAP = {
+  Iphone: Iphone,
+  Cellphone: Cellphone,
+  Monitor: Pc,
+  Setting: Setting
 }
-
-function mockPackages(projectId, endpointName) {
-  const ep = ALL_ENDPOINTS.find(e => e.name === endpointName)
-  const ext = ep ? ep.ext : 'zip'
-  // 模拟"后端生成"的版本号 + 包名
-  const versions = [
-    { v: 'v2.4.1', daysAgo: 0 },
-    { v: 'v2.4.0', daysAgo: 2 },
-    { v: 'v2.3.5', daysAgo: 5 },
-    { v: 'v2.3.4', daysAgo: 8 },
-    { v: 'v2.3.3', daysAgo: 12 },
-    { v: 'v2.3.0', daysAgo: 18 },
-    { v: 'v2.2.0', daysAgo: 26 }
-  ]
-  return versions.map((it, idx) => {
-    const d = new Date()
-    d.setDate(d.getDate() - it.daysAgo)
-    d.setHours(10 + idx, 20 + idx * 3, 0, 0)
-    return {
-      id: `${projectId}-${ep.slug}-pkg-${idx + 1}`,
-      name: `${ep.slug}-${it.v}.${ext}`, // ← 模拟后端返回
-      time: formatDateTime(d),
-      size: `${(38 + idx * 1.7).toFixed(1)}MB`,
-      author: ['张伟', '李娜', '王强', '赵敏', '刘洋'][idx % 5]
-    }
-  })
-}
-
-// 模拟"后端生成包名": 上传成功后,后端会返回什么
-function fakeBackendPackageName(endpointName) {
-  const ep = ALL_ENDPOINTS.find(e => e.name === endpointName)
-  const ext = ep ? ep.ext : 'zip'
-  const slug = ep ? ep.slug : 'app'
-  // 模拟一个递增的版本号(v2.4.x)
-  const patch = Math.floor(Math.random() * 10)
-  return `${slug}-v2.5.${patch}.${ext}`
-}
-
-function formatDateTime(d) {
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
+const resolveIcon = name => ICON_MAP[name] || Folder
 
 // =====================================================
 // 状态
 // =====================================================
-const treeData = ref([])
+const treeData = ref([])         // 后端返回的树(项目 + 端嵌套结构)
+const projectsForSelect = ref([]) // 项目原始数据(弹窗下拉用,id 是数字)
 const treeLoading = ref(false)
 const filterText = ref('')
 const defaultExpanded = computed(() => treeData.value.slice(0, 3).map(n => n.id))
 
+const allEndpoints = ref([])     // 端字典(下拉用),从后端 getEndpoints() 拉
 const selectedNode = ref(null)
-const selectedProject = ref(null) // 业务项目 {id, name, endpoints}
-const selectedEndpoint = ref(null) // 端 {name, ext, icon, slug, project}
+const selectedProject = ref(null) // 业务项目 {id, code, name, description, endpoints: [...]}
+const selectedEndpoint = ref(null) // 端 {id, name, ext, icon, slug, project}
 const packageList = ref([])
 const loadingPackages = ref(false)
 const selectedPackage = ref(null)
 const pulling = ref(false)
 const result = ref(null)
 
-// 上传弹窗状态
+// 上传弹窗
 const uploadDialogVisible = ref(false)
 const uploading = ref(false)
-const uploadFile = ref(null)
-const uploadFormProjects = ref([]) // 业务项目列表(下拉)
+const packing = ref(false)         // JSZip 打包中
+const packingProgress = ref(0)     // 打包进度 0~100
+const uploadFile = ref(null)       // 单文件模式(ios/android)
+const selectedFiles = ref([])      // 文件夹模式文件列表(web)
 const uploadForm = ref(emptyUploadForm())
+const fileInputRef = ref(null)     // native input 引用,手动设 webkitdirectory
 
 // =====================================================
 // 计算属性
@@ -153,15 +94,88 @@ const filterNode = (value, data) => {
 
 const canPull = computed(() => !!(selectedEndpoint.value && selectedPackage.value && !pulling.value))
 
+// 上传按钮的可用条件:有项目+端+文件,且总大小 > 0
+const canUpload = computed(() => {
+  if (!uploadForm.value.projectId || !uploadForm.value.endpoint) return false
+  if (uploading.value || packing.value) return false
+  if (isFolderMode.value) {
+    return selectedFiles.value.length > 0 && totalSizeMB.value > 0
+  }
+  return !!uploadFile.value && uploadFile.value.size > 0
+})
+
+// 当前选中项目下能选的端(下拉用,等价于后端返回的 project.endpoints)
+const endpointOptionsForProject = computed(() => {
+  if (!uploadForm.value.projectId) return []
+  const p = projectsForSelect.value.find(x => x.id === uploadForm.value.projectId)
+  return p?.endpoints || []
+})
+
+// 当前端是不是"文件夹模式"(前台web/后台web 走整目录)
+// 判定规则:ext 是 zip(后续 iOS 改 ipa 后再加分支)
+const isFolderMode = computed(() => {
+  const ep = endpointOptionsForProject.value.find(e => e.name === uploadForm.value.endpoint)
+  if (!ep) return false
+  return ep.ext === 'zip'
+})
+
+// 当前选中文件(单文件模式)或文件列表(文件夹模式)的总大小(MB)
+const totalSizeMB = computed(() => {
+  if (isFolderMode.value) {
+    const total = selectedFiles.value.reduce((sum, f) => sum + (f.size || 0), 0)
+    return total / 1024 / 1024
+  }
+  return uploadFile.value ? uploadFile.value.size / 1024 / 1024 : 0
+})
+
+// 文件夹名(取第一个文件的相对路径第一段)
+const folderName = computed(() => {
+  if (!isFolderMode.value || selectedFiles.value.length === 0) return ''
+  const f = selectedFiles.value[0]
+  // webkitRelativePath 形如 "my-project/index.html"
+  if (f.webkitRelativePath) {
+    return f.webkitRelativePath.split('/')[0]
+  }
+  // fallback 到文件名前缀(去后缀)
+  return f.name.replace(/\.[^.]+$/, '') || 'package'
+})
+
 // =====================================================
 // 操作 - 树
 // =====================================================
-function loadTree() {
+async function loadTree() {
   treeLoading.value = true
-  setTimeout(() => {
-    treeData.value = buildTree()
+  try {
+    const { data } = await getProjectTree()
+    const projects = data.list || []
+    // 原始数据存一份(弹窗下拉用,id 是数字)
+    projectsForSelect.value = projects
+    // 包成 el-tree 节点(id 加 'project:' / 'endpoint:' 前缀)
+    treeData.value = projects.map(p => ({
+      id: `project:${p.id}`,
+      label: p.name,
+      raw: p,
+      children: (p.endpoints || []).map(ep => ({
+        id: `endpoint:${p.id}:${ep.id}`,
+        label: ep.name,
+        raw: { project: p, endpoint: ep }
+      }))
+    }))
+  } catch (e) {
+    ElMessage.error('加载项目树失败')
+    console.error(e)
+  } finally {
     treeLoading.value = false
-  }, 200)
+  }
+}
+
+async function loadAllEndpoints() {
+  try {
+    const { data } = await getEndpoints()
+    allEndpoints.value = data.list || []
+  } catch (e) {
+    console.error(e)
+  }
 }
 
 function onTreeNodeClick(node) {
@@ -170,17 +184,17 @@ function onTreeNodeClick(node) {
   selectedPackage.value = null
   packageList.value = []
 
-  if (node.id.startsWith('project:')) {
+  if (String(node.id).startsWith('project:')) {
     selectedProject.value = node.raw
     selectedEndpoint.value = null
-  } else if (node.id.startsWith('endpoint:')) {
+  } else if (String(node.id).startsWith('endpoint:')) {
     selectedProject.value = node.raw.project
     selectedEndpoint.value = {
       name: node.label,
       endpoint: node.raw.endpoint,
       project: node.raw.project
     }
-    loadPackages(node.raw.project.id, node.label)
+    loadPackages(node.raw.project.id, node.raw.endpoint.id)
   }
 }
 
@@ -193,13 +207,18 @@ function resetSelection() {
   result.value = null
 }
 
-function loadPackages(projectId, endpointName) {
+async function loadPackages(projectId, endpointId) {
   loadingPackages.value = true
   packageList.value = []
-  setTimeout(() => {
-    packageList.value = mockPackages(projectId, endpointName)
+  try {
+    const { data } = await getPackages({ project_id: projectId, endpoint_id: endpointId })
+    packageList.value = data.list || []
+  } catch (e) {
+    ElMessage.error('加载代码包失败')
+    console.error(e)
+  } finally {
     loadingPackages.value = false
-  }, 200)
+  }
 }
 
 function onPackageSelect(pkg) {
@@ -207,7 +226,7 @@ function onPackageSelect(pkg) {
 }
 
 // =====================================================
-// 操作 - 拉取
+// 拉取
 // =====================================================
 async function handlePull() {
   if (!canPull.value) return
@@ -218,44 +237,48 @@ async function handlePull() {
   result.value = {
     type: 'info',
     title: '执行中',
-    text: `⏳ 正在部署 ${pkg.name}\n目标: ${proj.name} (${ep.name})\n(大概 3-5 秒,请稍候...)`
+    text: `⏳ 正在部署 ${pkg.full_name}\n目标: ${proj.name} (${ep.name})\n(大概 3-5 秒,请稍候...)`
   }
-  await new Promise(res => setTimeout(res, 1500 + Math.random() * 1500))
-  const ok = Math.random() > 0.2
-  if (ok) {
-    const timeCost = (2.5 + Math.random() * 2).toFixed(2)
-    result.value = {
-      type: 'success',
-      title: '拉取成功',
-      text: `✓ 部署成功\n代码包: ${pkg.name} (${pkg.time})\n目标: ${proj.name} (${ep.name})\n耗时: ${timeCost}s`
+  try {
+    const { data } = await pullPackage(pkg.id)
+    if (data.success) {
+      result.value = {
+        type: 'success',
+        title: '拉取成功',
+        text: `✓ 部署成功\n代码包: ${pkg.full_name} (${pkg.build_time})\n目标: ${proj.name} (${ep.name})\n耗时: ${(data.time_cost || 0).toFixed(2)}s`
+      }
+    } else {
+      result.value = {
+        type: 'error',
+        title: '拉取失败',
+        text: `✗ 部署失败\n代码包: ${pkg.full_name} (${pkg.build_time})\n目标: ${proj.name} (${ep.name})\n错误: ${data.err || '未知错误'}`
+      }
     }
-  } else {
+  } catch (e) {
     result.value = {
       type: 'error',
-      title: '拉取失败',
-      text: `✗ 部署失败\n代码包: ${pkg.name} (${pkg.time})\n目标: ${proj.name} (${ep.name})\n错误: 部署失败: target host unreachable`
+      title: '请求失败',
+      text: `✗ 部署失败\n错误: ${e?.msg || e?.message || '请求失败'}`
     }
+  } finally {
+    pulling.value = false
   }
-  pulling.value = false
 }
 
 // =====================================================
-// 上传代码包
+// 上传
 // =====================================================
 function emptyUploadForm() {
   return {
     projectId: '',
     endpoint: '',
-    author: 'admin',
-    time: formatDateTime(new Date()),
     note: ''
   }
 }
 
 function openUploadDialog() {
   uploadForm.value = emptyUploadForm()
-  uploadFormProjects.value = [...mockProjects]
-  // 默认预填当前选中的项目+端
+  // 预填当前选中的项目+端
   if (selectedProject.value) {
     uploadForm.value.projectId = selectedProject.value.id
     if (selectedEndpoint.value) {
@@ -263,40 +286,149 @@ function openUploadDialog() {
     }
   }
   uploadFile.value = null
+  selectedFiles.value = []
+  packingProgress.value = 0
   uploadDialogVisible.value = true
+  // 等 DOM 渲染完,同步 webkitdirectory 属性
+  nextTick(() => syncWebkitDirectory())
 }
 
 function onUploadProjectChange() {
   uploadForm.value.endpoint = ''
+  clearSelected()
 }
 
-function endpointOptionsForProject(projectId) {
-  const p = mockProjects.find(x => x.id === projectId)
-  if (!p) return []
-  return ALL_ENDPOINTS.filter(ep => p.endpoints.includes(ep.name))
+function onUploadEndpointChange() {
+  // 切换端时清掉已选文件(单/文件夹模式互斥)
+  clearSelected()
+  nextTick(() => syncWebkitDirectory())
 }
 
-function onFileChange(file) {
-  uploadFile.value = file.raw || null
+// native input 选完文件后,native change 事件
+// 只走点击选择,不走拖拽(浏览器对文件夹拖拽支持差,webRelativePath 不可靠)
+function onNativeFileChange(e) {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) return
+  if (isFolderMode.value) {
+    // 文件夹模式:累加所有文件
+    const added = []
+    files.forEach(f => {
+      if (!selectedFiles.value.find(x => x.name === f.name && x.size === f.size)) {
+        selectedFiles.value.push(f)
+        added.push(f)
+      }
+    })
+    // 检查 0 字节文件
+    const empty = added.filter(f => f.size === 0)
+    if (empty.length > 0 && empty.length === added.length) {
+      ElMessage.warning(`所选文件夹里 ${empty.length} 个文件都是 0 字节,无法上传`)
+    } else if (empty.length > 0) {
+      ElMessage.warning(`已忽略 ${empty.length} 个 0 字节文件`)
+    }
+  } else {
+    // 单文件模式:只取第一个
+    uploadFile.value = files[0]
+    if (files[0].size === 0) {
+      ElMessage.warning('所选文件是 0 字节,无法上传')
+    }
+  }
+  checkSizeLimit()
 }
 
-function onFileRemove() {
+function clearSelected() {
+  selectedFiles.value = []
   uploadFile.value = null
+  packingProgress.value = 0
+  // 清空 input 的 value,允许选同一个
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+// 同步 webkitdirectory 属性到 native input(Vue 模板渲染不靠谱,手动设)
+function syncWebkitDirectory() {
+  const input = fileInputRef.value
+  if (!input) return
+  if (isFolderMode.value) {
+    input.setAttribute('webkitdirectory', '')
+    input.setAttribute('directory', '')
+    input.setAttribute('mozdirectory', '')
+    input.setAttribute('multiple', '')
+  } else {
+    input.removeAttribute('webkitdirectory')
+    input.removeAttribute('directory')
+    input.removeAttribute('mozdirectory')
+    input.removeAttribute('multiple')
+  }
+}
+
+// 拖拽已禁用(浏览器对文件夹拖拽支持差,file 引用易失效)
+// 只走点击选择 → fileInputRef.click() → 浏览器弹文件选择器 → onNativeFileChange
+
+function checkSizeLimit() {
+  const total = isFolderMode.value
+    ? selectedFiles.value.reduce((sum, f) => sum + (f.size || 0), 0)
+    : (uploadFile.value?.size || 0)
+  if (total > FOLDER_SIZE_LIMIT) {
+    ElMessage.warning(
+      isFolderMode.value
+        ? `文件夹总大小 ${(total / 1024 / 1024).toFixed(1)}MB 超过 300MB 限制,请清理后再选`
+        : `文件 ${(total / 1024 / 1024).toFixed(1)}MB 超过 300MB 限制`
+    )
+    // 自动清掉,避免误传
+    clearSelected()
+    return false
+  }
+  return true
+}
+
+// 文件夹模式 → JSZip 打包成 Blob
+// 关键:提前 await file.arrayBuffer() 把 file 转成内存 ArrayBuffer,
+//       不依赖原 file 引用(input.value 清空后 file 引用会失效)
+// 同时给重名文件加序号(拖拽多文件场景下 webkitRelativePath 可能是空,fallback 到 name 会撞)
+async function packFolderToZip() {
+  if (selectedFiles.value.length === 0) return null
+  packing.value = true
+  packingProgress.value = 0
+  const zip = new JSZip()
+  const total = selectedFiles.value.length
+  const usedNames = new Set()
+  for (let i = 0; i < total; i++) {
+    const f = selectedFiles.value[i]
+    let rel = f.webkitRelativePath || f.name
+    if (!rel) rel = `file_${i}`
+    // 防止重名:加序号后缀
+    let unique = rel
+    let n = 1
+    while (usedNames.has(unique)) {
+      const dot = rel.lastIndexOf('.')
+      unique = dot > 0
+        ? `${rel.slice(0, dot)}_${n}${rel.slice(dot)}`
+        : `${rel}_${n}`
+      n++
+    }
+    usedNames.add(unique)
+    // 关键:把 file 读成 ArrayBuffer,避免后续 file 引用失效
+    const buf = await f.arrayBuffer()
+    zip.file(unique, buf)
+    packingProgress.value = Math.round(((i + 1) / total) * 100)
+  }
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+  packing.value = false
+  return blob
 }
 
 function validateUpload() {
   if (!uploadForm.value.projectId) { ElMessage.warning('请选择所属项目'); return false }
   if (!uploadForm.value.endpoint) { ElMessage.warning('请选择所属端'); return false }
-  if (!uploadFile.value) { ElMessage.warning('请选择要上传的文件'); return false }
-  const name = (uploadFile.value.name || '').toLowerCase()
-  const ep = ALL_ENDPOINTS.find(e => e.name === uploadForm.value.endpoint)
-  const expectedExt = ep ? ep.ext : ''
-  if (expectedExt === 'apk' && !name.endsWith('.apk')) {
-    ElMessage.warning('苹果/安卓端请上传 .apk 文件')
+  if (isFolderMode.value && selectedFiles.value.length === 0) {
+    ElMessage.warning('请选择要上传的文件夹')
     return false
   }
-  if (expectedExt === 'zip' && !(name.endsWith('.zip') || name.endsWith('.tar.gz') || name.endsWith('.tgz'))) {
-    ElMessage.warning(`${uploadForm.value.endpoint} 请上传 .zip / .tar.gz 文件`)
+  if (!isFolderMode.value && !uploadFile.value) {
+    ElMessage.warning('请选择要上传的文件')
     return false
   }
   return true
@@ -304,51 +436,85 @@ function validateUpload() {
 
 async function confirmUpload() {
   if (!validateUpload()) return
-  uploading.value = true
-  // 模拟上传 + 后端生成包名
-  await new Promise(res => setTimeout(res, 1500 + Math.random() * 1000))
-  uploading.value = false
+  if (!checkSizeLimit()) return
 
-  if (Math.random() > 0.2) {
-    const newPkg = {
-      id: `pkg-${Date.now()}`,
-      name: fakeBackendPackageName(uploadForm.value.endpoint, uploadFile.value.name),
-      time: uploadForm.value.time,
-      size: `${(uploadFile.value.size / 1024 / 1024).toFixed(1)}MB`,
-      author: uploadForm.value.author
+  const ep = endpointOptionsForProject.value.find(e => e.name === uploadForm.value.endpoint)
+
+  try {
+    let fileToUpload
+    let displayName
+
+    if (isFolderMode.value) {
+      // 文件夹模式 → JSZip 打包
+      ElMessage.info(`正在打包 ${selectedFiles.value.length} 个文件...`)
+      const zipBlob = await packFolderToZip()
+      if (!zipBlob) {
+        ElMessage.error('打包失败')
+        return
+      }
+      // 把 zipBlob 包成 File,用 folderName 当文件名
+      fileToUpload = new File([zipBlob], `${folderName.value || 'package'}.zip`, {
+        type: 'application/zip'
+      })
+      displayName = folderName.value
+    } else {
+      // 单文件模式
+      fileToUpload = uploadFile.value
+      displayName = fileToUpload.name.replace(/\.[^.]+$/, '')
     }
-    ElMessage.success(`上传成功: ${newPkg.name}`)
+
+    uploading.value = true
+    const fd = new FormData()
+    fd.append('file', fileToUpload)
+    fd.append('project_id', String(uploadForm.value.projectId))
+    fd.append('endpoint_id', String(ep.id))
+    // 包名:文件夹用 folderName,单文件用文件名去后缀
+    fd.append('name', displayName)
+    if (uploadForm.value.note) fd.append('note', uploadForm.value.note)
+    // build_time / uploader 由后端从 token 自动生成(当前时间 + user_id)
+
+    const { data: newPkg } = await uploadPackage(fd)
+    ElMessage.success(`上传成功: ${newPkg.full_name}`)
     uploadDialogVisible.value = false
     // 如果当前选中的项目+端 == 新包归属 → 刷新代码包列表
-    if (selectedProject.value?.id === uploadForm.value.projectId
-        && selectedEndpoint.value?.endpoint?.name === uploadForm.value.endpoint) {
+    if (selectedProject.value?.id === newPkg.project_id
+        && selectedEndpoint.value?.endpoint?.id === newPkg.endpoint_id) {
       packageList.value = [newPkg, ...packageList.value]
       selectedPackage.value = newPkg
     }
     // 问是否立即部署
-    const proj = mockProjects.find(x => x.id === uploadForm.value.projectId)
+    const proj = treeData.value.find(t => t.id === newPkg.project_id)
     ElMessageBox.confirm(
-      `代码包 ${newPkg.name} 已上传。是否立即部署到 ${proj?.name} (${uploadForm.value.endpoint})?`,
+      `代码包 ${newPkg.full_name} 已上传。是否立即部署到 ${proj?.name} (${uploadForm.value.endpoint})?`,
       '部署提示',
       { confirmButtonText: '立即部署', cancelButtonText: '稍后', type: 'success' }
     ).then(() => {
       if (proj) selectedProject.value = proj
       selectedEndpoint.value = {
         name: uploadForm.value.endpoint,
-        endpoint: ALL_ENDPOINTS.find(e => e.name === uploadForm.value.endpoint),
+        endpoint: ep,
         project: proj
       }
       selectedPackage.value = newPkg
       if (!packageList.value.some(x => x.id === newPkg.id)) {
-        loadPackages(uploadForm.value.projectId, uploadForm.value.endpoint)
+        loadPackages(newPkg.project_id, newPkg.endpoint_id)
       }
     }).catch(() => { /* 稍后 */ })
-  } else {
-    ElMessage.error('上传失败: 网络异常,请重试')
+  } catch (e) {
+    console.error('[confirmUpload] failed:', e)
+    const detail = e?.msg || e?.message || (typeof e === 'string' ? e : '网络异常')
+    ElMessage.error(`上传失败: ${detail}`)
+  } finally {
+    uploading.value = false
+    packing.value = false
+    packingProgress.value = 0
   }
 }
 
-onMounted(loadTree)
+onMounted(async () => {
+  await loadAllEndpoints()
+  await loadTree()
+})
 </script>
 
 <template>
@@ -369,9 +535,14 @@ onMounted(loadTree)
               >
                 上传代码包
               </el-button>
-              <el-tag v-if="treeData.length" size="small" type="info">
-                {{ treeData.length }} 个项目
-              </el-tag>
+              <el-button
+                size="small"
+                :icon="Refresh"
+                @click="loadTree"
+                :loading="treeLoading"
+              >
+                刷新
+              </el-button>
             </div>
           </div>
         </template>
@@ -380,7 +551,6 @@ onMounted(loadTree)
           v-model="filterText"
           placeholder="🔍 搜索项目或端"
           clearable
-          :prefix-icon="Search"
           size="default"
           style="margin-bottom: 12px;"
         />
@@ -395,24 +565,25 @@ onMounted(loadTree)
           highlight-current
           @node-click="onTreeNodeClick"
           class="dept-tree"
+          empty-text="暂无项目,点击「上传代码包」或到 admin_menus 配置"
         >
           <template #default="{ node, data }">
             <span class="tree-node">
-              <template v-if="data.id.startsWith('project:')">
+              <template v-if="String(data.id).startsWith('project:')">
                 <el-icon :size="14" class="node-icon project">
                   <Folder />
                 </el-icon>
                 <span class="node-label">{{ node.label }}</span>
                 <el-tag size="small" type="info" effect="plain" class="node-meta">
-                  {{ data.raw.endpoints.length }} 端
+                  {{ data.raw.endpoints?.length || 0 }} 端
                 </el-tag>
               </template>
               <template v-else>
                 <el-icon :size="14" class="node-icon endpoint">
-                  <component :is="data.raw.endpoint.icon" />
+                  <component :is="resolveIcon(data.raw.endpoint.icon)" />
                 </el-icon>
                 <span class="node-label">{{ node.label }}</span>
-                <span class="node-meta">{{ data.raw.endpoint.ext }}</span>
+                <span class="node-meta">.{{ data.raw.endpoint.ext }}</span>
               </template>
             </span>
           </template>
@@ -453,8 +624,14 @@ onMounted(loadTree)
             <el-descriptions-item label="项目 ID">
               <span class="mono">{{ selectedProject.id }}</span>
             </el-descriptions-item>
+            <el-descriptions-item label="项目编码">
+              <span class="mono">{{ selectedProject.code }}</span>
+            </el-descriptions-item>
             <el-descriptions-item label="端数量">
-              {{ selectedProject.endpoints.length }} 个 ({{ selectedProject.endpoints.join('、') }})
+              {{ selectedProject.endpoints?.length || 0 }} 个
+              <span v-if="selectedProject.endpoints?.length" class="meta-inline">
+                ({{ selectedProject.endpoints.map(e => e.name).join('、') }})
+              </span>
             </el-descriptions-item>
           </el-descriptions>
           <el-alert
@@ -472,7 +649,7 @@ onMounted(loadTree)
           <div class="info-title">
             <span class="info-prefix">所属项目: <strong>{{ selectedEndpoint.project.name }}</strong></span>
             <el-icon :size="20" :color="selectedEndpoint.endpoint.ext === 'apk' ? '#67c23a' : '#409eff'">
-              <component :is="selectedEndpoint.endpoint.icon" />
+              <component :is="resolveIcon(selectedEndpoint.endpoint.icon)" />
             </el-icon>
             <span>{{ selectedEndpoint.endpoint.name }}</span>
             <el-tag size="small" type="info" style="margin-left: 8px;">
@@ -497,15 +674,19 @@ onMounted(loadTree)
               style="cursor: pointer;"
             >
               <el-table-column type="index" label="#" width="50" />
-              <el-table-column prop="name" label="包名" min-width="220" show-overflow-tooltip />
-              <el-table-column prop="time" label="构建时间" width="170" />
-              <el-table-column prop="size" label="大小" width="80" />
-              <el-table-column prop="author" label="构建人" width="90" />
+              <el-table-column prop="full_name" label="包名" min-width="220" show-overflow-tooltip />
+              <el-table-column prop="build_time" label="构建时间" width="170" />
+              <el-table-column label="大小" width="90">
+                <template #default="{ row }">
+                  {{ row.size ? (row.size / 1024 / 1024).toFixed(1) + 'MB' : '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
             </el-table>
 
             <div v-if="selectedPackage" class="selected-pkg">
               <el-icon :size="16" color="#67c23a"><Connection /></el-icon>
-              <span>已选: <strong>{{ selectedPackage.name }}</strong> · {{ selectedPackage.time }}</span>
+              <span>已选: <strong>{{ selectedPackage.full_name }}</strong> · {{ selectedPackage.build_time }}</span>
             </div>
           </div>
 
@@ -553,7 +734,7 @@ onMounted(loadTree)
             @change="onUploadProjectChange"
           >
             <el-option
-              v-for="p in uploadFormProjects"
+              v-for="p in projectsForSelect"
               :key="p.id"
               :label="p.name"
               :value="p.id"
@@ -567,29 +748,15 @@ onMounted(loadTree)
             placeholder="选择端"
             :disabled="!uploadForm.projectId"
             style="width: 100%"
+            @change="onUploadEndpointChange"
           >
             <el-option
-              v-for="ep in endpointOptionsForProject(uploadForm.projectId)"
-              :key="ep.name"
+              v-for="ep in endpointOptionsForProject"
+              :key="ep.id"
               :label="`${ep.name}  (.${ep.ext})`"
               :value="ep.name"
             />
           </el-select>
-        </el-form-item>
-
-        <el-form-item label="构建人">
-          <el-input v-model="uploadForm.author" placeholder="构建人" style="width: 200px" />
-        </el-form-item>
-
-        <el-form-item label="构建时间">
-          <el-date-picker
-            v-model="uploadForm.time"
-            type="datetime"
-            value-format="YYYY-MM-DD HH:mm:ss"
-            format="YYYY-MM-DD HH:mm:ss"
-            placeholder="构建时间"
-            style="width: 240px"
-          />
         </el-form-item>
 
         <el-form-item label="备注">
@@ -602,31 +769,61 @@ onMounted(loadTree)
         </el-form-item>
 
         <el-form-item label="上传文件" required>
-          <el-upload
-            drag
-            :auto-upload="false"
-            :limit="1"
-            :on-change="onFileChange"
-            :on-remove="onFileRemove"
-            accept=".apk,.zip,.tar.gz,.tgz"
-          >
+          <div class="upload-drag" @click="triggerFileInput">
+            <input
+              ref="fileInputRef"
+              type="file"
+              style="display: none"
+              @change="onNativeFileChange"
+            />
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-            <div class="el-upload__text">
-              拖拽文件到此或<em>点击选择</em>
+            <div class="upload-text">
+              <template v-if="isFolderMode">
+                <em>点击选择文件夹</em>(整目录自动打包成 zip)
+              </template>
+              <template v-else>
+                <em>点击选择文件</em>
+              </template>
             </div>
-            <template #tip>
-              <div class="el-upload__tip">
-                包名 / 版本号由后端自动生成,无需填写
-                <span v-if="uploadFile"> · 已选: {{ uploadFile.name }} ({{ (uploadFile.size / 1024 / 1024).toFixed(2) }}MB)</span>
-              </div>
-            </template>
-          </el-upload>
+            <div class="upload-tip">
+              <template v-if="packing">
+                <el-progress :percentage="packingProgress" :stroke-width="14" />
+                <span style="margin-left: 8px;">正在打包... {{ packingProgress }}%</span>
+              </template>
+              <template v-else>
+                <template v-if="isFolderMode">
+                  <template v-if="selectedFiles.length > 0">
+                    已选文件夹: <strong>{{ folderName }}</strong> · {{ selectedFiles.length }} 个文件 ·
+                    {{ totalSizeMB.toFixed(2) }}MB
+                    <el-button link type="danger" size="small" @click.stop="clearSelected">清空</el-button>
+                  </template>
+                  <template v-else>
+                    支持 Chrome / Edge(整目录自动打包成 zip)
+                  </template>
+                </template>
+                <template v-else>
+                  <template v-if="uploadFile">
+                    已选: <strong>{{ uploadFile.name }}</strong> · {{ totalSizeMB.toFixed(2) }}MB
+                    <el-button link type="danger" size="small" @click.stop="clearSelected">清空</el-button>
+                  </template>
+                  <template v-else>
+                    支持任意后缀,iOS 选 .ipa / 安卓选 .apk
+                  </template>
+                </template>
+              </template>
+            </div>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="uploadDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="uploading" @click="confirmUpload">
-          确认上传
+        <el-button
+          type="primary"
+          :loading="uploading || packing"
+          :disabled="!canUpload"
+          @click="confirmUpload"
+        >
+          {{ packing ? '打包中...' : '确认上传' }}
         </el-button>
       </template>
     </el-dialog>
@@ -663,7 +860,7 @@ onMounted(loadTree)
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dept-tree {
@@ -727,6 +924,12 @@ onMounted(loadTree)
   word-break: break-all;
 }
 
+.meta-inline {
+  color: #909399;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
 .field-label {
   display: flex;
   align-items: center;
@@ -776,5 +979,50 @@ onMounted(loadTree)
   word-break: break-all;
   line-height: 1.5;
   color: inherit;
+}
+
+.upload-drag {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  padding: 24px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafafa;
+  transition: border-color 0.2s;
+}
+
+.upload-drag:hover {
+  border-color: #409eff;
+}
+
+.upload-drag .el-icon--upload {
+  font-size: 48px;
+  color: #c0c4cc;
+  margin-bottom: 8px;
+}
+
+.upload-drag .upload-text {
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.upload-drag .upload-text em {
+  color: #409eff;
+  font-style: normal;
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.upload-drag .upload-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #909399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-height: 20px;
 }
 </style>
