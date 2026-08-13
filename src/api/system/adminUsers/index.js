@@ -3,7 +3,6 @@
  *
  * 接口:
  *   GET    /api/system/adminUsers/list  列表分页
- *   GET    /api/system/adminUsers/:id   单条
  *   POST   /api/system/adminUsers       新增
  *   PUT    /api/system/adminUsers/:id   更新
  *   DELETE /api/system/adminUsers/:id   删除(软删除)
@@ -21,18 +20,6 @@ export function getAdminUsersList(params) {
     url: '/api/system/adminUsers/list',
     method: 'get',
     params
-  })
-}
-
-/**
- * 单条查询
- * @param {number} id 用户 ID
- * @returns {Promise<{data: Object}>}
- */
-export function getAdminUsers(id) {
-  return request({
-    url: `/api/system/adminUsers/${id}`,
-    method: 'get'
   })
 }
 

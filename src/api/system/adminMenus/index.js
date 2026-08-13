@@ -6,12 +6,10 @@
  *   GET    /api/system/adminMenus/all                     所有菜单(带 operations,角色分配用)
  *   GET    /api/system/adminMenus/options                 parent_id=0 的菜单
  *   GET    /api/system/adminMenus/operations/:menu_id     某菜单的所有 operation
- *   GET    /api/system/adminMenus/:id                     单条
  *   POST   /api/system/adminMenus                         新增
  *   PUT    /api/system/adminMenus/:id                     更新
  *   DELETE /api/system/adminMenus/:id                     删除
  *
- *   GET    /api/system/adminMenus/operations/get/:id      operation 单条
  *   POST   /api/system/adminMenus/operations              operation 新增
  *   PUT    /api/system/adminMenus/operations/:id          operation 更新
  *   DELETE /api/system/adminMenus/operations/:id          operation 删除
@@ -39,18 +37,6 @@ export function getAdminMenusList(params) {
 export function getAdminMenusOptions() {
   return request({
     url: '/api/system/adminMenus/options',
-    method: 'get'
-  })
-}
-
-/**
- * 单条查询
- * @param {number} id
- * @returns {Promise<{data: Object}>}
- */
-export function getAdminMenus(id) {
-  return request({
-    url: `/api/system/adminMenus/${id}`,
     method: 'get'
   })
 }
@@ -113,18 +99,6 @@ export function deleteAdminMenus(id) {
 // 一条 operation = (method, path) 一条具体接口的权限元数据
 // 用于"菜单管理 -> 操作"页面
 // 启动时 SyncRoutes 会自动把 gin 里注册的路由同步进来,这里提供手动增删改
-
-/**
- * operation 单条
- * @param {number} id
- * @returns {Promise<{data: {id, menu_id, method, path, name, sort}}>}
- */
-export function getOperation(id) {
-  return request({
-    url: `/api/system/adminMenus/operations/get/${id}`,
-    method: 'get'
-  })
-}
 
 /**
  * 新增 operation

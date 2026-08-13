@@ -3,9 +3,8 @@
  *
  * 接口(路径跟 menu.code 一致,中间件推断 adminRoles:*):
  *   GET    /api/system/adminRoles/list  列表分页
- *   GET    /api/system/adminRoles/:id   单条
- *   POST   /api/system/adminRoles       新增(带 dataScope)
- *   PUT    /api/system/adminRoles/:id   更新(带 dataScope)
+ *   POST   /api/system/adminRoles       新增
+ *   PUT    /api/system/adminRoles/:id   更新
  *   DELETE /api/system/adminRoles/:id   删除
  */
 
@@ -25,21 +24,8 @@ export function getAdminRolesList(params) {
 }
 
 /**
- * 单条查询
- * @param {number} id
- * @returns {Promise<{data: Object}>}
- */
-export function getAdminRoles(id) {
-  return request({
-    url: `/api/system/adminRoles/${id}`,
-    method: 'get'
-  })
-}
-
-/**
  * 新增
- * @param {{name, describe, status, data_scope}} data
- *   data_scope: 0=全部 1=部门 2=自己
+ * @param {{name, describe, status}} data
  * @returns {Promise<{data: Object}>}
  */
 export function createAdminRoles(data) {
@@ -53,7 +39,7 @@ export function createAdminRoles(data) {
 /**
  * 更新
  * @param {number} id
- * @param {{name, describe, status, data_scope}} data
+ * @param {{name, describe, status}} data
  * @returns {Promise<{data: Object}>}
  */
 export function updateAdminRoles(id, data) {

@@ -15,6 +15,7 @@
  *   2xxx  权限
  *   3xxx  文件 / OSS
  *   4xxx  参数
+ *   5xxx  代码部署(codeDeploy 模块)
  *   9xxx  通用 / 未分类
  *
  * 加新业务码的步骤:
@@ -76,6 +77,28 @@ export const BizCode = Object.freeze({
   // ===== 4xxx 参数 =====
   /** 参数错误(通用,适用于所有参数校验失败) */
   ParamsInvalid: 4001,
+
+  // ===== 5xxx 代码部署(codeDeploy) =====
+  /** 端不存在 */
+  EndpointNotFound: 5001,
+  /** 业务项目不存在 */
+  ProjectNotFound: 5002,
+  /** 业务项目 code 已存在 */
+  ProjectDuplicate: 5003,
+  /** 该项目下未配置任何端 */
+  ProjectNoEndpoint: 5004,
+  /** 代码包不存在 */
+  PackageNotFound: 5005,
+  /** 文件扩展名与端不匹配 */
+  PackageExtInvalid: 5006,
+  /** 代码包超过大小限制(默认 200MB) */
+  PackageTooLarge: 5007,
+  /** 从 JMS 同步业务项目失败(调用 JMS 出错) */
+  ProjectSyncFail: 5008,
+  /** JumpServer 未配置(检查 config.yaml 的 jumpserver 段) */
+  ProjectSyncNoConfig: 5009,
+  /** JMS 响应解析失败(返回了非预期格式) */
+  ProjectSyncParse: 5010,
 
   // ===== 9xxx 通用 =====
   /** 未分类失败 */

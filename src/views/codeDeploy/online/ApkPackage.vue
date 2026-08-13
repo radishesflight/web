@@ -37,7 +37,9 @@ import {
   getProjectTree,
   getPackages,
   uploadPackage,
-  pullPackage
+  pullPackage,
+  getPackageDownloadURL,
+  deletePackage
 } from '@/api/codeDeploy'
 import JSZip from 'jszip'
 
@@ -263,6 +265,47 @@ async function handlePull() {
   } finally {
     pulling.value = false
   }
+}
+
+// =====================================================
+// 下载 / 删除
+// =====================================================
+async function handleDownload(row) {
+  try {
+    const { data: signedURL } = await getPackageDownloadURL(row.id)
+    // a.click() 触发浏览器下载(signed URL 带了 Content-Disposition: attachment)
+    const a = document.createElement('a')
+    a.href = signedURL
+    a.download = row.full_name
+    a.target = '_blank'
+    a.rel = 'noopener'
+    a.click()
+  } catch (e) {
+    ElMessage.error(`下载失败: ${e?.msg || e?.message || '网络异常'}`)
+  }
+}
+
+function handleDelete(row) {
+  ElMessageBox.confirm(
+    `确定删除代码包 ${row.full_name} 吗?\n\n(会同步删除 OSS 文件,不可恢复)`,
+    '删除代码包',
+    { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
+  ).then(async () => {
+    try {
+      await deletePackage(row.id)
+      ElMessage.success('删除成功')
+      // 刷新当前端下的代码包列表
+      if (selectedEndpoint.value) {
+        loadPackages(selectedEndpoint.value.project.id, selectedEndpoint.value.endpoint.id)
+      }
+      // 如果删的是当前选中的,清掉(否则拉取按钮还会显示)
+      if (selectedPackage.value?.id === row.id) {
+        selectedPackage.value = null
+      }
+    } catch (e) {
+      ElMessage.error(`删除失败: ${e?.msg || e?.message || '网络异常'}`)
+    }
+  }).catch(() => { /* 取消 */ })
 }
 
 // =====================================================
@@ -682,6 +725,12 @@ onMounted(async () => {
                 </template>
               </el-table-column>
               <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip />
+              <el-table-column label="操作" width="160" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" size="small" @click.stop="handleDownload(row)">下载</el-button>
+                  <el-button link type="danger" size="small" @click.stop="handleDelete(row)">删除</el-button>
+                </template>
+              </el-table-column>
             </el-table>
 
             <div v-if="selectedPackage" class="selected-pkg">

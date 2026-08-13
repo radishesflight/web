@@ -3,7 +3,6 @@
 
   设计:
   - 纯角色列表 + 增删改查
-  - 数据范围(0=全部/1=部门/2=自己)在编辑对话框里选
   - 选角色后,把 roleId 存到 Pinia,跳转"权限分配"页
 -->
 <script setup>
@@ -29,7 +28,7 @@ const pagination = ref({ page: 1, size: 10, total: 0 })
 
 const dialogVisible = ref(false)
 const dialogTitle = ref('新增角色')
-const form = ref({ id: 0, name: '', describe: '', status: 1, data_scope: 0 })
+const form = ref({ id: 0, name: '', describe: '', status: 1 })
 
 const fetchData = async () => {
   loading.value = true
@@ -48,7 +47,7 @@ const fetchData = async () => {
 }
 
 const openCreate = () => {
-  form.value = { id: 0, name: '', describe: '', status: 1, data_scope: 0 }
+  form.value = { id: 0, name: '', describe: '', status: 1 }
   dialogTitle.value = '新增角色'
   dialogVisible.value = true
 }
@@ -58,8 +57,7 @@ const openEdit = (row) => {
     id: row.id,
     name: row.name,
     describe: row.describe || '',
-    status: row.status,
-    data_scope: row.data_scope ?? 0
+    status: row.status
   }
   dialogTitle.value = '编辑角色'
   dialogVisible.value = true
@@ -75,16 +73,14 @@ const submit = async () => {
       await createAdminRoles({
         name: form.value.name,
         describe: form.value.describe,
-        status: form.value.status,
-        data_scope: form.value.data_scope
+        status: form.value.status
       })
       ElMessage.success('创建成功')
     } else {
       await updateAdminRoles(form.value.id, {
         name: form.value.name,
         describe: form.value.describe,
-        status: form.value.status,
-        data_scope: form.value.data_scope
+        status: form.value.status
       })
       ElMessage.success('更新成功')
     }
@@ -135,13 +131,6 @@ onMounted(fetchData)
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" label="名称" min-width="120" />
         <el-table-column prop="describe" label="描述" min-width="120" show-overflow-tooltip />
-        <el-table-column label="数据范围" width="100">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.data_scope === 0 ? 'success' : (row.data_scope === 1 ? 'warning' : 'info')">
-              {{ ['全部', '部门', '自己'][row.data_scope] || '全部' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'" size="small">
@@ -184,14 +173,6 @@ onMounted(fetchData)
         <el-form-item label="描述">
           <el-input v-model="form.describe" placeholder="角色用途说明" />
         </el-form-item>
-        <el-form-item label="数据范围">
-          <el-radio-group v-model="form.data_scope">
-            <el-radio :value="0">看全部</el-radio>
-            <el-radio :value="1">看部门</el-radio>
-            <el-radio :value="2">看自己</el-radio>
-          </el-radio-group>
-          <div class="form-tip">决定该角色能查询的数据范围</div>
-        </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
             <el-radio :value="1">启用</el-radio>
@@ -210,5 +191,4 @@ onMounted(fetchData)
 <style scoped>
 .page-container { padding: 20px; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
-.form-tip { font-size: 12px; color: #999; margin-top: 4px; }
 </style>
