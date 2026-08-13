@@ -11,22 +11,21 @@
     - tree        GET /api/codeDeploy/tree   返回资产/项目层级
     - packages    GET /api/codeDeploy/projects/:id/packages
     - pull        POST /api/codeDeploy/projects/:id/pull {pkg_id}
+    - upload      POST /api/codeDeploy/packages  FormData {asset_id, project_path, type, version, file, ...}
 -->
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search,
-  Tools,
   Refresh,
   Promotion,
   Folder,
   Monitor,
-  Connection
+  Connection,
+  UploadFilled,
+  Plus
 } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
-
-const router = useRouter()
 
 // =====================================================
 // 假数据
@@ -118,6 +117,13 @@ const selectedPackage = ref(null) // {id, name, time, ...}
 const pulling = ref(false)
 const result = ref(null) // {type, title, text}
 
+// 上传弹窗状态
+const uploadDialogVisible = ref(false)
+const uploading = ref(false)
+const uploadFile = ref(null) // el-upload 选中的原始 File
+const uploadFormProjects = ref([]) // 当前选中资产对应的项目列表
+const uploadForm = ref(emptyUploadForm())
+
 // =====================================================
 // 计算属性
 // =====================================================
@@ -201,6 +207,123 @@ async function handlePull() {
   pulling.value = false
 }
 
+// =====================================================
+// 上传代码包
+// =====================================================
+function emptyUploadForm() {
+  return {
+    type: 'frontend',          // frontend | apk
+    assetId: '',
+    projectPath: '',
+    version: '',
+    author: 'admin',
+    time: formatDateTime(new Date()),
+    note: ''
+  }
+}
+
+function buildProjectOptions(assetID) {
+  if (!assetID) return []
+  return projectTemplates
+    .filter((_, i) => !assetID.endsWith(String(i).padStart(2, '0')))
+    .map(p => ({ ...p }))
+}
+
+function openUploadDialog() {
+  uploadForm.value = emptyUploadForm()
+  // 默认预填当前选中的资产+项目,方便连续操作
+  if (selectedAsset.value) {
+    uploadForm.value.assetId = selectedAsset.value.id
+    uploadFormProjects.value = buildProjectOptions(selectedAsset.value.id)
+    if (selectedProject.value) {
+      uploadForm.value.projectPath = selectedProject.value.path
+    }
+  } else {
+    uploadFormProjects.value = []
+  }
+  uploadFile.value = null
+  uploadDialogVisible.value = true
+}
+
+function onUploadAssetChange(assetID) {
+  uploadForm.value.projectPath = ''
+  uploadFormProjects.value = buildProjectOptions(assetID)
+}
+
+function onFileChange(file) {
+  uploadFile.value = file.raw || null
+}
+
+function onFileRemove() {
+  uploadFile.value = null
+}
+
+function genPackageName(form) {
+  const seg = form.projectPath.split('/').pop() || 'app'
+  const ext = form.type === 'apk' ? 'apk' : 'zip'
+  return `${seg}-${form.version}.${ext}`
+}
+
+function validateUpload() {
+  if (!uploadForm.value.assetId) { ElMessage.warning('请选择所属资产'); return false }
+  if (!uploadForm.value.projectPath) { ElMessage.warning('请选择所属项目'); return false }
+  if (!uploadForm.value.version) { ElMessage.warning('请输入版本号'); return false }
+  if (!uploadFile.value) { ElMessage.warning('请选择要上传的文件'); return false }
+  // 后缀名校验
+  const name = (uploadFile.value.name || '').toLowerCase()
+  const ok = uploadForm.value.type === 'apk'
+    ? name.endsWith('.apk')
+    : (name.endsWith('.zip') || name.endsWith('.tar.gz') || name.endsWith('.tgz'))
+  if (!ok) {
+    ElMessage.warning(uploadForm.value.type === 'apk' ? 'APK 包请上传 .apk 文件' : '前端包请上传 .zip / .tar.gz 文件')
+    return false
+  }
+  return true
+}
+
+async function confirmUpload() {
+  if (!validateUpload()) return
+  uploading.value = true
+  // 模拟上传,80% 成功
+  await new Promise(res => setTimeout(res, 1500 + Math.random() * 1000))
+  uploading.value = false
+
+  if (Math.random() > 0.2) {
+    const newPkg = {
+      id: `pkg-${Date.now()}`,
+      name: genPackageName(uploadForm.value),
+      time: uploadForm.value.time,
+      size: `${(uploadFile.value.size / 1024 / 1024).toFixed(1)}MB`,
+      author: uploadForm.value.author
+    }
+    ElMessage.success(`上传成功: ${newPkg.name}`)
+    uploadDialogVisible.value = false
+    // 如果当前选中的资产+项目 == 新包归属 → 刷新代码包列表
+    if (selectedAsset.value?.id === uploadForm.value.assetId
+        && selectedProject.value?.path === uploadForm.value.projectPath) {
+      packageList.value = [newPkg, ...packageList.value]
+      selectedPackage.value = newPkg
+    }
+    // 问是否立即部署
+    ElMessageBox.confirm(
+      `代码包 ${newPkg.name} 已上传。是否立即部署到 ${selectedAsset.value?.name || '该资产'}?`,
+      '部署提示',
+      { confirmButtonText: '立即部署', cancelButtonText: '稍后', type: 'success' }
+    ).then(() => {
+      const a = mockAssets.find(x => x.id === uploadForm.value.assetId)
+      const p = uploadFormProjects.value.find(x => x.path === uploadForm.value.projectPath)
+      if (a) selectedAsset.value = a
+      if (p) selectedProject.value = { name: p.name, path: p.path, asset: a }
+      selectedPackage.value = newPkg
+      if (!packageList.value.some(x => x.id === newPkg.id)) {
+        loadPackages(uploadForm.value.projectPath)
+      }
+    }).catch(() => { /* 稍后 */ })
+  } else {
+    ElMessage.error('上传失败: 网络异常,请重试')
+  }
+}
+
 onMounted(loadTree)
 </script>
 
@@ -213,9 +336,19 @@ onMounted(loadTree)
         <template #header>
           <div class="card-header">
             <span>资产 / 项目</span>
-            <el-tag v-if="treeData.length" size="small" type="info">
-              {{ treeData.length }} 台资产
-            </el-tag>
+            <div class="header-right">
+              <el-button
+                size="small"
+                type="primary"
+                :icon="Plus"
+                @click="openUploadDialog"
+              >
+                上传代码包
+              </el-button>
+              <el-tag v-if="treeData.length" size="small" type="info">
+                {{ treeData.length }} 台资产
+              </el-tag>
+            </div>
           </div>
         </template>
 
@@ -369,6 +502,125 @@ onMounted(loadTree)
         </div>
       </el-card>
     </div>
+
+    <!-- 上传代码包弹窗 -->
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="上传代码包"
+      width="640px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form :model="uploadForm" label-width="100px" label-position="right">
+        <el-form-item label="包类型" required>
+          <el-radio-group v-model="uploadForm.type">
+            <el-radio value="frontend">前端包 (.zip / .tar.gz)</el-radio>
+            <el-radio value="apk">APK (.apk)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="所属资产" required>
+          <el-select
+            v-model="uploadForm.assetId"
+            placeholder="选择资产"
+            filterable
+            style="width: 100%"
+            @change="onUploadAssetChange"
+          >
+            <el-option
+              v-for="a in mockAssets"
+              :key="a.id"
+              :label="`${a.name} (${a.ip})`"
+              :value="a.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="所属项目" required>
+          <el-select
+            v-model="uploadForm.projectPath"
+            placeholder="选择项目"
+            :disabled="!uploadForm.assetId"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="p in uploadFormProjects"
+              :key="p.path"
+              :label="`${p.name}  (${p.path})`"
+              :value="p.path"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="版本号" required>
+          <el-input
+            v-model="uploadForm.version"
+            placeholder="如: v2.4.2"
+            style="width: 200px"
+          />
+          <span class="form-hint">
+            最终包名: {{ genPackageName(uploadForm) || '(请先选项目+版本号)' }}
+          </span>
+        </el-form-item>
+
+        <el-form-item label="构建人">
+          <el-input v-model="uploadForm.author" placeholder="构建人" style="width: 200px" />
+        </el-form-item>
+
+        <el-form-item label="构建时间">
+          <el-date-picker
+            v-model="uploadForm.time"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            placeholder="构建时间"
+            style="width: 240px"
+          />
+        </el-form-item>
+
+        <el-form-item label="备注">
+          <el-input
+            v-model="uploadForm.note"
+            type="textarea"
+            :rows="2"
+            placeholder="选填,本次构建的变更说明"
+          />
+        </el-form-item>
+
+        <el-form-item label="上传文件" required>
+          <el-upload
+            drag
+            :auto-upload="false"
+            :limit="1"
+            :on-change="onFileChange"
+            :on-remove="onFileRemove"
+            accept=".apk,.zip,.tar.gz,.tgz"
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">
+              拖拽文件到此或<em>点击选择</em>
+            </div>
+            <template #tip>
+              <div class="el-upload__tip">
+                <template v-if="uploadForm.type === 'apk'">
+                  仅支持 .apk 格式
+                </template>
+                <template v-else>
+                  支持 .zip / .tar.gz / .tgz
+                </template>
+                <span v-if="uploadFile"> · 已选: {{ uploadFile.name }} ({{ (uploadFile.size / 1024 / 1024).toFixed(2) }}MB)</span>
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="uploading" @click="confirmUpload">
+          确认上传
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -413,6 +665,19 @@ onMounted(loadTree)
   align-items: center;
   justify-content: space-between;
   font-weight: 500;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-hint {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #909399;
+  font-family: ui-monospace, Consolas, monospace;
 }
 
 .dept-tree {
