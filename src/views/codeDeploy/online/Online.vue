@@ -1,635 +1,561 @@
 <!--
-  菜单管理页
+  代码拉取控制台(Online)
 
-  功能:
-   - 列表分页(sort asc)
-   - 上级菜单选择(parent_id = 0 的菜单)
-   - 图标选择器(用 Element Plus 全部图标)
-   - 新增 / 编辑 / 删除
-   - 每行菜单的"管理操作"按钮 -> 抽屉式管理该菜单下的 operation(API 权限元数据)
-   - 按钮级权限:hasRoute('POST', '/api/system/adminMenus')/'PUT'/'DELETE' 等
-
-  关键点:
-   - 菜单 code(如 "adminUsers")被后端用来推断权限:code:operation
-   - parent_id 0 = 顶级菜单(目录)
-   - 图标用 element-plus 的图标 name,存进 DB 后前端用 <component :is> 渲染
-   - operation = (method, path) 一条具体接口的权限元数据,由 admin_menu_operations 存储
-     启动时 SyncRoutes 会自动从 gin 路由扫描新增,这里只用来改中文名 / sort / 删除多余项
+  还原 F:/work/go/test/cs/index.html 的页面,移植到 Vue 3 + Element Plus。
+  当前用假数据,后续对接后端时:
+   - assets  → GET /api/codeDeploy/assets
+   - projects → GET /api/codeDeploy/assets/:id/projects
+   - pull    → POST /api/codeDeploy/assets/:id/git-pull
 -->
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-import {
-  getAdminMenusList,
-  getAdminMenusOptions,
-  createAdminMenus,
-  updateAdminMenus,
-  deleteAdminMenus,
-  getMenuOperations,
-  createOperation,
-  updateOperation,
-  deleteOperation
-} from '@/api/system/adminMenus/index.js'
-import { useUserStore } from '@/stores/user.js'
+import { Search, Tools, Refresh, Promotion } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 
-const userStore = useUserStore()
-
-const tableData = ref([])
-const loading = ref(false)
-const pagination = ref({
-  page: 1,
-  size: 10,
-  total: 0
-})
-
-const dialogVisible = ref(false)
-const dialogTitle = ref('新增菜单')
-const formData = ref({
-  id: null,
-  name: '',
-  code: '',
-  path: '',
-  icon: '',
-  parent_id: 0,
-  sort: 0,
-  status: 1
-})
-
-const parentMenuOptions = ref([])
-const parentMenuLoading = ref(false)
-
-const iconDialogVisible = ref(false)
-const searchQuery = ref('')
-const iconList = computed(() => Object.keys(ElementPlusIconsVue))
-const filteredIconList = ref([])
+const router = useRouter()
 
 // =====================================================
-// operation 管理(弹窗式抽屉)
+// 假数据
 // =====================================================
-const opsDrawerVisible = ref(false)
-const opsCurrentMenu = ref(null) // 当前选中的菜单
-const opsList = ref([])
-const opsLoading = ref(false)
-const opsDialogVisible = ref(false)
-const opsDialogTitle = ref('新增操作')
-const opsForm = ref({
-  id: null,
-  menu_id: 0,
-  method: 'GET',
-  path: '',
-  name: '',
-  sort: 0
+const mockAssets = [
+  { id: 'a-001', name: '东平一腾服务器', ip: '47.92.254.58' },
+  { id: 'a-002', name: '云红前台01', ip: '182.44.119.32' },
+  { id: 'a-003', name: '云红前台02', ip: '182.44.119.29' },
+  { id: 'a-004', name: '云红前台03', ip: '182.44.117.237' },
+  { id: 'a-005', name: '云红后台', ip: '182.44.119.31' },
+  { id: 'a-006', name: '云红控销前台', ip: '113.250.187.37' },
+  { id: 'a-007', name: '云红控销后台', ip: '113.250.184.214' },
+  { id: 'a-008', name: '云红直播', ip: '182.44.119.30' },
+  { id: 'a-009', name: '点药官网', ip: '47.104.21.108' },
+  { id: 'a-010', name: '点药H5', ip: '47.104.22.55' },
+  { id: 'a-011', name: '点药后台', ip: '47.104.23.66' },
+  { id: 'a-012', name: '点药-控销前台', ip: '47.104.24.77' },
+  { id: 'a-013', name: '点药-控销后台', ip: '47.104.25.88' },
+  { id: 'a-014', name: '点药直播', ip: '47.104.26.99' },
+  { id: 'a-015', name: '点药小程序API', ip: '47.104.27.10' },
+  { id: 'a-016', name: '点药支付中心', ip: '47.104.28.21' },
+  { id: 'a-017', name: '点药订单中台', ip: '47.104.29.32' },
+  { id: 'a-018', name: '点药-ERP', ip: '47.104.30.43' },
+  { id: 'a-019', name: '点药-财务系统', ip: '47.104.31.54' },
+  { id: 'a-020', name: '点药-报表系统', ip: '47.104.32.65' },
+  { id: 'a-021', name: '云红-ERP', ip: '182.44.120.10' },
+  { id: 'a-022', name: '云红-财务系统', ip: '182.44.120.11' },
+  { id: 'a-023', name: '云红-报表系统', ip: '182.44.120.12' },
+  { id: 'a-024', name: '云红-支付中心', ip: '182.44.120.13' },
+  { id: 'a-025', name: '云红-订单中台', ip: '182.44.120.14' },
+  { id: 'a-026', name: '云红-小程序API', ip: '182.44.120.15' },
+  { id: 'a-027', name: '云红-营销活动', ip: '182.44.120.16' },
+  { id: 'a-028', name: '云红-优惠券', ip: '182.44.120.17' },
+  { id: 'a-029', name: '云红-会员系统', ip: '182.44.120.18' },
+  { id: 'a-030', name: '云红-门店管理', ip: '182.44.120.19' },
+  { id: 'a-031', name: '点药-门店管理', ip: '47.104.33.76' },
+  { id: 'a-032', name: '点药-会员系统', ip: '47.104.34.87' },
+  { id: 'a-033', name: '点药-优惠券', ip: '47.104.35.98' },
+  { id: 'a-034', name: '点药-营销活动', ip: '47.104.36.09' },
+  { id: 'a-035', name: '云红-商品中心', ip: '182.44.120.20' },
+  { id: 'a-036', name: '云红-库存管理', ip: '182.44.120.21' },
+  { id: 'a-037', name: '云红-物流系统', ip: '182.44.120.22' },
+  { id: 'a-038', name: '点药-商品中心', ip: '47.104.37.20' },
+  { id: 'a-039', name: '点药-库存管理', ip: '47.104.38.31' },
+  { id: 'a-040', name: '点药-物流系统', ip: '47.104.39.42' },
+  { id: 'a-041', name: '点药-数据中台', ip: '47.104.40.53' },
+  { id: 'a-042', name: '云红-数据中台', ip: '182.44.120.23' },
+  { id: 'a-043', name: '点药-客服系统', ip: '47.104.41.64' },
+  { id: 'a-044', name: '云红-客服系统', ip: '182.44.120.24' },
+  { id: 'a-045', name: '点药-消息推送', ip: '47.104.42.75' },
+  { id: 'a-046', name: '云红-消息推送', ip: '182.44.120.25' },
+  { id: 'a-047', name: '点药-搜索服务', ip: '47.104.43.86' },
+  { id: 'a-048', name: '云红-搜索服务', ip: '182.44.120.26' },
+  { id: 'a-049', name: '点药-风控系统', ip: '47.104.44.97' },
+  { id: 'a-050', name: '云红-风控系统', ip: '182.44.120.27' },
+  { id: 'a-051', name: '点药-定时任务', ip: '47.104.45.08' },
+  { id: 'a-052', name: '云红-定时任务', ip: '182.44.120.28' },
+  { id: 'a-053', name: '点药-日志收集', ip: '47.104.46.19' }
+]
+
+// 假"项目配置":每个资产都配 2~3 个可拉取项目
+function mockProjects(assetID) {
+  return [
+    { name: 'web前台', path: '/data/www/web' },
+    { name: '后台API', path: '/data/www/api' },
+    { name: '管理后台', path: '/data/www/admin' }
+  ].filter((_, i) => !assetID.endsWith(String(i).padStart(2, '0'))) // 制造一些差异感
+}
+
+// =====================================================
+// 状态
+// =====================================================
+const allAssets = ref([])
+const loadingAssets = ref(false)
+const filter = ref('')
+const selectedAsset = ref(null) // {id, name, ip}
+const projectOptions = ref([])
+const loadingProjects = ref(false)
+const selectedProject = ref('')
+const commandPreview = ref('')
+const pulling = ref(false)
+const result = ref(null) // {type, text}
+
+// 最近用过的资产(localStorage 持久化)
+const RECENTS_KEY = 'codeDeploy.recents'
+const RECENTS_MAX = 10
+const recentAssetIDs = ref([])
+
+function loadRecents() {
+  try {
+    const raw = localStorage.getItem(RECENTS_KEY)
+    if (raw) recentAssetIDs.value = JSON.parse(raw)
+  } catch { recentAssetIDs.value = [] }
+}
+function saveRecents() {
+  try {
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(recentAssetIDs.value.slice(0, RECENTS_MAX)))
+  } catch { /* 忽略 */ }
+}
+function pushRecent(id) {
+  recentAssetIDs.value = [id, ...recentAssetIDs.value.filter(x => x !== id)].slice(0, RECENTS_MAX)
+  saveRecents()
+}
+
+// =====================================================
+// 计算属性
+// =====================================================
+const recentSet = computed(() => new Set(recentAssetIDs.value))
+
+const filteredAssets = computed(() => {
+  const q = filter.value.trim().toLowerCase()
+  if (!q) return allAssets.value
+  return allAssets.value.filter(a =>
+    a.name.toLowerCase().includes(q) || a.ip.toLowerCase().includes(q)
+  )
 })
 
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const res = await getAdminMenusList({
-      page: pagination.value.page,
-      size: pagination.value.size
-    })
-    tableData.value = res.data.list
-    pagination.value.total = res.data.total
-  } catch (error) {
-    console.error('获取列表失败:', error)
-  } finally {
-    loading.value = false
-  }
+// 把"最近用过"排到最前面(其余保持原顺序)
+const orderedAssets = computed(() => {
+  const matched = filteredAssets.value
+  const recents = recentAssetIDs.value
+    .map(id => matched.find(a => a.id === id))
+    .filter(Boolean)
+  const rest = matched.filter(a => !recentSet.value.has(a.id))
+  return [...recents, ...rest]
+})
+
+const assetCountText = computed(() => {
+  if (allAssets.value.length === 0) return ''
+  const q = filter.value.trim()
+  return q
+    ? `(共 ${allAssets.value.length} 台,匹配 ${orderedAssets.value.length})`
+    : `(共 ${allAssets.value.length} 台)`
+})
+
+const canPull = computed(() =>
+  !!(selectedAsset.value && selectedProject.value && !pulling.value)
+)
+
+// =====================================================
+// 操作
+// =====================================================
+function loadAssets() {
+  loadingAssets.value = true
+  // 模拟异步
+  setTimeout(() => {
+    allAssets.value = mockAssets
+    loadingAssets.value = false
+  }, 200)
 }
 
-const loadParentMenuOptions = async () => {
-  parentMenuLoading.value = true
-  try {
-    const res = await getAdminMenusOptions()
-    parentMenuOptions.value = res.data
-  } catch (error) {
-    console.error('获取上级菜单失败:', error)
-  } finally {
-    parentMenuLoading.value = false
-  }
+function selectAsset(asset) {
+  selectedAsset.value = asset
+  // 重置项目 + 命令
+  selectedProject.value = ''
+  commandPreview.value = ''
+  result.value = null
+  loadProjects(asset.id)
 }
 
-const handleAdd = () => {
-  dialogTitle.value = '新增菜单'
-  formData.value = {
-    id: null,
-    name: '',
-    code: '',
-    path: '',
-    icon: '',
-    parent_id: 0,
-    sort: 0,
-    status: 1
-  }
-  loadParentMenuOptions()
-  dialogVisible.value = true
+function reselectAsset() {
+  selectedAsset.value = null
+  selectedProject.value = ''
+  projectOptions.value = []
+  commandPreview.value = ''
+  result.value = null
 }
 
-const handleEdit = (row) => {
-  dialogTitle.value = '编辑菜单'
-  formData.value = {
-    id: row.id,
-    name: row.name,
-    code: row.code,
-    path: row.path,
-    icon: row.icon,
-    parent_id: row.parent_id,
-    sort: row.sort,
-    status: row.status
-  }
-  loadParentMenuOptions()
-  dialogVisible.value = true
+function loadProjects(assetID) {
+  loadingProjects.value = true
+  projectOptions.value = []
+  setTimeout(() => {
+    projectOptions.value = mockProjects(assetID)
+    loadingProjects.value = false
+  }, 150)
 }
 
-const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定删除菜单 ${row.name} 吗？`, '提示', {
+function onProjectChange(path) {
+  if (!path) {
+    commandPreview.value = ''
+    return
+  }
+  commandPreview.value = `cd ${path} && git pull`
+}
+
+async function handlePull() {
+  if (!canPull.value) return
+  const id = selectedAsset.value.id
+  const path = selectedProject.value
+  pulling.value = true
+  result.value = {
+    type: 'info',
+    title: '执行中',
+    text: `⏳ 正在执行: cd ${path} && git pull && chown -R www.www ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
+  }
+  // 模拟接口调用,80% 成功 20% 失败
+  await new Promise(res => setTimeout(res, 1500 + Math.random() * 1500))
+  const ok = Math.random() > 0.2
+  if (ok) {
+    const timeCost = (2.5 + Math.random() * 2).toFixed(2)
+    result.value = {
+      type: 'success',
+      title: '拉取成功',
+      text: `✓ 拉取成功\n命令: cd ${path} && git pull && chown -R www.www ${path}\n成功资产: ${selectedAsset.value.name} (${selectedAsset.value.ip})\n耗时: ${timeCost}s`
+    }
+    pushRecent(id)
+  } else {
+    result.value = {
+      type: 'error',
+      title: '拉取失败',
+      text: `✗ 拉取失败\n命令: cd ${path} && git pull && chown -R www.www ${path}\n失败的: ${selectedAsset.value.name} (${selectedAsset.value.ip})\n错误: Git pull 失败: fatal: unable to access...`
+    }
+  }
+  pulling.value = false
+}
+
+function handleLogout() {
+  ElMessageBox.confirm('确定退出登录吗?', '提示', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(async () => {
-    try {
-      await deleteAdminMenus(row.id)
-      ElMessage.success('删除成功')
-      fetchData()
-    } catch (error) {
-      console.error('删除失败:', error)
-    }
-  })
-}
-
-const handleSubmit = async () => {
-  try {
-    if (!formData.value.name) {
-      ElMessage.warning('请输入菜单名称')
-      return
-    }
-    if (!formData.value.code) {
-      ElMessage.warning('请输入菜单编码')
-      return
-    }
-    const data = {
-      name: formData.value.name,
-      code: formData.value.code,
-      path: formData.value.path,
-      icon: formData.value.icon,
-      parent_id: formData.value.parent_id,
-      sort: formData.value.sort,
-      status: formData.value.status
-    }
-    if (!formData.value.id) {
-      await createAdminMenus(data)
-      ElMessage.success('创建成功')
-    } else {
-      await updateAdminMenus(formData.value.id, data)
-      ElMessage.success('更新成功')
-    }
-    dialogVisible.value = false
-    fetchData()
-  } catch (error) {
-    console.error('操作失败:', error)
-  }
-}
-
-const openIconPicker = () => {
-  searchQuery.value = ''
-  filteredIconList.value = iconList.value
-  iconDialogVisible.value = true
-}
-
-const handleIconSearch = () => {
-  if (!searchQuery.value) {
-    filteredIconList.value = iconList.value
-  } else {
-    filteredIconList.value = iconList.value.filter(name =>
-      name.toLowerCase().includes(searchQuery.value.toLowerCase())
-    )
-  }
-}
-
-const selectIcon = (iconName) => {
-  formData.value.icon = iconName
-  iconDialogVisible.value = false
-  ElMessage.success(`已选择图标: ${iconName}`)
-}
-
-// =====================================================
-// operation 管理相关
-// =====================================================
-const openOperationsDrawer = async (row) => {
-  opsCurrentMenu.value = row
-  opsDrawerVisible.value = true
-  await fetchOperations()
-}
-
-const fetchOperations = async () => {
-  if (!opsCurrentMenu.value) return
-  opsLoading.value = true
-  try {
-    const res = await getMenuOperations(opsCurrentMenu.value.id)
-    opsList.value = res.data || []
-  } catch (error) {
-    console.error('获取操作列表失败:', error)
-    opsList.value = []
-  } finally {
-    opsLoading.value = false
-  }
-}
-
-const handleAddOperation = () => {
-  opsDialogTitle.value = '新增操作'
-  opsForm.value = {
-    id: null,
-    menu_id: opsCurrentMenu.value?.id || 0,
-    method: 'GET',
-    path: '',
-    name: '',
-    sort: 0
-  }
-  opsDialogVisible.value = true
-}
-
-const handleEditOperation = (row) => {
-  opsDialogTitle.value = '编辑操作'
-  opsForm.value = {
-    id: row.id,
-    menu_id: row.menu_id,
-    method: row.method,
-    path: row.path,
-    name: row.name,
-    sort: row.sort
-  }
-  opsDialogVisible.value = true
-}
-
-const handleDeleteOperation = (row) => {
-  ElMessageBox.confirm(
-    `确定删除操作 [${row.method} ${row.path}] 吗?\n同时会清掉所有角色的关联(此操作的权限)。`,
-    '提示',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  ).then(async () => {
-    try {
-      await deleteOperation(row.id)
-      ElMessage.success('删除成功')
-      await fetchOperations()
-    } catch (error) {
-      console.error('删除操作失败:', error)
-    }
-  })
-}
-
-const handleSubmitOperation = async () => {
-  try {
-    if (!opsForm.value.path) {
-      ElMessage.warning('请输入路径')
-      return
-    }
-    if (!opsForm.value.id && !opsForm.value.method) {
-      ElMessage.warning('请选择 HTTP 方法')
-      return
-    }
-    if (opsForm.value.id) {
-      // 更新:只改 name / sort / menu_id
-      await updateOperation(opsForm.value.id, {
-        menu_id: opsForm.value.menu_id,
-        name: opsForm.value.name,
-        sort: opsForm.value.sort
-      })
-      ElMessage.success('更新成功')
-    } else {
-      // 新增
-      await createOperation({
-        menu_id: opsForm.value.menu_id,
-        method: opsForm.value.method,
-        path: opsForm.value.path,
-        name: opsForm.value.name,
-        sort: opsForm.value.sort
-      })
-      ElMessage.success('创建成功')
-    }
-    opsDialogVisible.value = false
-    await fetchOperations()
-  } catch (error) {
-    console.error('保存操作失败:', error)
-  }
-}
-
-const methodTagType = (m) => {
-  switch ((m || '').toUpperCase()) {
-    case 'GET':
-      return ''
-    case 'POST':
-      return 'success'
-    case 'PUT':
-      return 'warning'
-    case 'DELETE':
-      return 'danger'
-    default:
-      return 'info'
-  }
+  }).then(() => {
+    // 假数据场景下,清一下 recents 并跳到登录页
+    localStorage.removeItem('token')
+    ElMessage.success('已退出')
+    router.push('/login')
+  }).catch(() => { /* 取消 */ })
 }
 
 onMounted(() => {
-  fetchData()
+  loadRecents()
+  loadAssets()
 })
 </script>
 
 <template>
-  <div class="page-container">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>菜单列表</span>
-          <el-button type="primary" @click="handleAdd" v-if="userStore.hasRoute('POST', '/api/system/adminMenus')">新增菜单</el-button>
-        </div>
-      </template>
-
-      <el-table :data="tableData" v-loading="loading" stripe style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="name" label="菜单名称" />
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="path" label="路径" />
-        <el-table-column prop="icon" label="图标" width="120">
-          <template #default="{ row }">
-            <el-icon :size="24" v-if="row.icon">
-              <component :is="row.icon" />
-            </el-icon>
-            <span v-else>-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="sort" label="排序" width="80" />
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" />
-        <el-table-column label="操作" width="260">
-          <template #default="{ row }">
-            <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasRoute('PUT', '/api/system/adminMenus/:id')">编辑</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasRoute('DELETE', '/api/system/adminMenus/:id')">删除</el-button>
-            <el-button type="success" size="small" @click="openOperationsDrawer(row)" v-if="userStore.hasRoute('GET', '/api/system/adminMenus/operations/:menu_id')">管理操作</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px">
-      <el-form :model="formData" label-width="80px">
-        <el-form-item label="菜单名称">
-          <el-input v-model="formData.name" placeholder="请输入菜单名称" />
-        </el-form-item>
-        <el-form-item label="菜单编码">
-          <el-input v-model="formData.code" placeholder="如: adminUsers" />
-        </el-form-item>
-        <el-form-item label="路径">
-          <el-input v-model="formData.path" placeholder="请输入路径" />
-        </el-form-item>
-        <el-form-item label="图标">
-          <div class="icon-selector">
-            <el-icon :size="32" v-if="formData.icon">
-              <component :is="formData.icon" />
-            </el-icon>
-            <span v-else class="no-icon">未选择</span>
-            <el-button type="primary" size="small" @click="openIconPicker">选择图标</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item label="上级菜单">
-          <el-select
-            v-model="formData.parent_id"
-            placeholder="请选择上级菜单"
-            clearable
-            filterable
-            style="width: 100%"
-          >
-            <el-option label="无上级菜单" :value="0" />
-            <el-option
-              v-for="menu in parentMenuOptions"
-              :key="menu.id"
-              :label="menu.name"
-              :value="menu.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="排序">
-          <el-input v-model="formData.sort" placeholder="请输入排序" type="number" />
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-radio-group v-model="formData.status">
-            <el-radio :label="1">启用</el-radio>
-            <el-radio :label="0">禁用</el-radio>
-          </el-radio-group>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="iconDialogVisible" title="选择图标" width="600px">
-      <el-input v-model="searchQuery" placeholder="搜索图标" @input="handleIconSearch" style="margin-bottom: 15px;" />
-      <div class="icon-grid">
-        <div
-          v-for="iconName in filteredIconList"
-          :key="iconName"
-          class="icon-item"
-          :class="{ selected: formData.icon === iconName }"
-          @click="selectIcon(iconName)"
-        >
-          <el-icon :size="24">
-            <component :is="iconName" />
-          </el-icon>
-          <span class="icon-name">{{ iconName }}</span>
-        </div>
+  <div class="online-page">
+    <!-- 顶部栏 -->
+    <header class="page-header">
+      <div class="title">
+        <el-icon :size="22"><Tools /></el-icon>
+        <span>代码拉取控制台</span>
       </div>
-    </el-dialog>
+    </header>
 
-    <!-- operation 管理抽屉 -->
-    <el-drawer
-      v-model="opsDrawerVisible"
-      :title="`操作管理 - ${opsCurrentMenu?.name || ''}`"
-      direction="rtl"
-      size="70%"
-    >
-      <div class="ops-drawer">
-        <div class="ops-toolbar">
-          <span class="ops-tip">
-            一条操作 = 一个具体接口的权限元数据 (method + path)<br>
-            <small>启动时 SyncRoutes 会从 gin 路由自动扫描新增;这里用来改中文名 / sort / 删除多余项</small>
-          </span>
-          <el-button
-            type="primary"
-            @click="handleAddOperation"
-            v-if="userStore.hasRoute('POST', '/api/system/adminMenus/operations')"
+    <!-- 主卡片 -->
+    <el-card shadow="never" class="main-card">
+      <!-- 1. 选择资产 -->
+      <template v-if="!selectedAsset">
+        <div class="field-label">
+          <span class="num">1.</span>
+          <span>选择资产</span>
+          <span class="count-text">{{ assetCountText }}</span>
+        </div>
+        <el-input
+          v-model="filter"
+          placeholder="🔍 搜索资产名或 IP (如:点药 / 47.104)..."
+          clearable
+          :prefix-icon="Search"
+          size="default"
+        />
+        <div class="asset-list" v-loading="loadingAssets">
+          <div v-if="!loadingAssets && allAssets.length === 0" class="asset-empty">
+            没有可用资产
+          </div>
+          <div
+            v-else-if="!loadingAssets && orderedAssets.length === 0"
+            class="asset-empty"
           >
-            新增操作
+            没有匹配 "{{ filter }}" 的资产
+          </div>
+          <div
+            v-for="asset in orderedAssets"
+            :key="asset.id"
+            class="asset-item"
+            :class="{ recent: recentSet.has(asset.id) }"
+            @click="selectAsset(asset)"
+          >
+            <span class="name">
+              {{ asset.name }}
+              <span v-if="recentSet.has(asset.id)" class="recent-tag">最近</span>
+            </span>
+            <span class="ip">{{ asset.ip }}</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- 1'. 已选资产 -->
+      <template v-else>
+        <div class="field-label">
+          <span class="num">1.</span>
+          <span>已选资产</span>
+        </div>
+        <div class="selected-asset">
+          <div class="sel-name">{{ selectedAsset.name }}</div>
+          <div class="sel-row">
+            <span class="sel-label">IP:</span>
+            <span class="sel-value mono">{{ selectedAsset.ip }}</span>
+          </div>
+          <div class="sel-row">
+            <span class="sel-label">ID:</span>
+            <span class="sel-value mono">{{ selectedAsset.id }}</span>
+          </div>
+          <el-button size="small" plain @click="reselectAsset" :icon="Refresh" style="margin-top: 10px;">
+            重新选择
           </el-button>
         </div>
-
-        <el-table :data="opsList" v-loading="opsLoading" stripe style="width: 100%">
-          <el-table-column prop="id" label="ID" width="80" />
-          <el-table-column label="方法" width="100">
-            <template #default="{ row }">
-              <el-tag :type="methodTagType(row.method)" size="small">{{ row.method }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="path" label="路径" min-width="200" />
-          <el-table-column prop="name" label="中文名" min-width="160" />
-          <el-table-column prop="sort" label="排序" width="80" />
-          <el-table-column label="操作" width="180">
-            <template #default="{ row }">
-              <el-button
-                type="primary"
-                size="small"
-                @click="handleEditOperation(row)"
-                v-if="userStore.hasRoute('PUT', '/api/system/adminMenus/operations/:id')"
-              >
-                编辑
-              </el-button>
-              <el-button
-                type="danger"
-                size="small"
-                @click="handleDeleteOperation(row)"
-                v-if="userStore.hasRoute('DELETE', '/api/system/adminMenus/operations/:id')"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
-    </el-drawer>
-
-    <!-- operation 新增/编辑对话框 -->
-    <el-dialog v-model="opsDialogVisible" :title="opsDialogTitle" width="500px">
-      <el-form :model="opsForm" label-width="80px">
-        <el-form-item label="HTTP方法">
-          <el-select v-model="opsForm.method" :disabled="!!opsForm.id" style="width: 100%">
-            <el-option label="GET" value="GET" />
-            <el-option label="POST" value="POST" />
-            <el-option label="PUT" value="PUT" />
-            <el-option label="DELETE" value="DELETE" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="路径">
-          <el-input
-            v-model="opsForm.path"
-            placeholder="如: /api/system/adminMenus/operations/:id"
-            :disabled="!!opsForm.id"
-          />
-        </el-form-item>
-        <el-form-item label="中文名">
-          <el-input v-model="opsForm.name" placeholder="给管理员看的中文名,如: 新增菜单" />
-        </el-form-item>
-        <el-form-item label="排序">
-          <el-input-number v-model="opsForm.sort" :min="0" :max="9999" controls-position="right" />
-        </el-form-item>
-        <el-form-item v-if="opsForm.id" label="所属菜单">
-          <el-select v-model="opsForm.menu_id" style="width: 100%">
-            <el-option
-              v-for="m in tableData"
-              :key="m.id"
-              :label="m.name"
-              :value="m.id"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="opsDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmitOperation">确定</el-button>
       </template>
-    </el-dialog>
+
+      <el-divider />
+
+      <!-- 2. 选择项目 -->
+      <div class="field-label">
+        <span class="num">2.</span>
+        <span>选择项目</span>
+      </div>
+      <el-select
+        v-model="selectedProject"
+        placeholder="-- 请先选资产 --"
+        :disabled="!selectedAsset"
+        :loading="loadingProjects"
+        @change="onProjectChange"
+        style="width: 100%"
+        size="default"
+      >
+        <el-option
+          v-for="p in projectOptions"
+          :key="p.path"
+          :label="`${p.name}  (${p.path})`"
+          :value="p.path"
+        />
+        <el-option
+          v-if="selectedAsset && !loadingProjects && projectOptions.length === 0"
+          disabled
+          label="该资产没有配置可拉取的项目"
+        />
+      </el-select>
+
+      <el-divider />
+
+      <!-- 3. 执行命令 -->
+      <div class="field-label">
+        <span class="num">3.</span>
+        <span>执行命令</span>
+      </div>
+      <el-input
+        v-model="commandPreview"
+        disabled
+        placeholder="选完项目自动显示"
+        size="default"
+      />
+
+      <div style="margin-top: 20px;">
+        <el-button
+          type="primary"
+          :loading="pulling"
+          :disabled="!canPull"
+          @click="handlePull"
+          :icon="Promotion"
+        >
+          拉取代码
+        </el-button>
+      </div>
+
+      <!-- 结果展示 -->
+      <div v-if="result" class="result-wrap">
+        <el-alert
+          :type="result.type"
+          :title="result.title"
+          :closable="false"
+          show-icon
+        >
+          <pre class="result-text">{{ result.text }}</pre>
+        </el-alert>
+      </div>
+    </el-card>
   </div>
 </template>
 
 <style scoped>
-.page-container {
-  padding: 20px;
+.online-page {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
-.card-header {
+.page-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
+  margin-bottom: 24px;
 }
 
-.icon-selector {
+.page-header .title {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1a202c;
 }
 
-.no-icon {
-  color: #999;
+.main-card {
+  border-radius: 8px;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
+  color: #4a5568;
+  font-weight: 500;
+  margin-bottom: 10px;
 }
 
-.icon-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
-  max-height: 400px;
-  overflow-y: auto;
+.field-label .num {
+  font-weight: 600;
+  color: #2c3e50;
 }
 
-.icon-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px;
-  border: 1px solid #eee;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.icon-item:hover {
-  border-color: #409EFF;
-  background-color: #f0f9ff;
-}
-
-.icon-item.selected {
-  border-color: #409EFF;
-  background-color: #ecf5ff;
-}
-
-.icon-name {
+.field-label .count-text {
+  font-weight: normal;
+  color: #718096;
   font-size: 12px;
-  margin-top: 5px;
-  color: #666;
+  margin-left: 4px;
 }
 
-/* operation drawer 内部样式 */
-.ops-drawer {
-  padding: 0 20px 20px;
+.asset-list {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
 }
 
-.ops-toolbar {
+.asset-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid #ebeef5;
+  cursor: pointer;
+  font-size: 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding: 12px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  transition: background 0.1s;
 }
 
-.ops-tip {
-  color: #606266;
-  font-size: 13px;
-  line-height: 1.6;
+.asset-item:hover {
+  background: #ecf5ff;
 }
 
-.ops-tip small {
-  color: #909399;
+.asset-item:last-child {
+  border-bottom: none;
+}
+
+.asset-item .name {
+  font-weight: 500;
+  color: #2c3e50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.asset-item .ip {
+  color: #718096;
+  font-family: ui-monospace, Consolas, monospace;
   font-size: 12px;
+}
+
+.asset-empty {
+  padding: 24px 14px;
+  color: #a0aec0;
+  font-size: 13px;
+  text-align: center;
+}
+
+.asset-item.recent {
+  background: #f0fdf4;
+}
+
+.asset-item.recent:hover {
+  background: #dcfce7;
+}
+
+.recent-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: normal;
+  background: #48bb78;
+  color: white;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.selected-asset {
+  background: #ecf5ff;
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.sel-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2c5282;
+  margin-bottom: 8px;
+}
+
+.sel-row {
+  font-size: 12px;
+  color: #4a5568;
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+}
+
+.sel-label {
+  color: #718096;
+  flex-shrink: 0;
+}
+
+.sel-value.mono,
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+  word-break: break-all;
+}
+
+.result-wrap {
+  margin-top: 16px;
+}
+
+.result-text {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  color: inherit;
 }
 </style>
