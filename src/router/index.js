@@ -18,6 +18,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import systemRoutes from './modules/system'
+import codeDeployRoutes from './modules/codeDeploy.js'
 
 const routes = [
   {
@@ -31,7 +32,8 @@ const routes = [
         component: () => import('@/views/Dashboard/Dashboard.vue'),
         meta: { title: '首页' }
       },
-      ...systemRoutes
+      ...systemRoutes,
+      ...codeDeployRoutes
     ]
   },
   {
