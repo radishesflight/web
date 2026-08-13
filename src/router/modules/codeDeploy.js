@@ -19,8 +19,14 @@
 export default [
   {
     path: '/codeDeploy/online',
-    name: 'CodeDeploy',
+    name: 'Online',
     component: () => import('@/views/codeDeploy/online/Online.vue'),
-    meta: { title: '管理员管1理' }
-  }
+    meta: { title: '代码部署' },
+  },
+  {
+    path: '/codeDeploy/apkPackage',
+    name: 'ApkPackage',
+    component: () => import('@/views/codeDeploy/online/ApkPackage.vue'),
+    meta: { title: 'apk/前端包管理' },
+  },
 ]

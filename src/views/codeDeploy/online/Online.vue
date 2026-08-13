@@ -10,7 +10,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Tools, Refresh, Promotion } from '@element-plus/icons-vue'
+import { Search, Tools, Refresh, Promotion, Check, Folder } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
@@ -83,6 +83,38 @@ function mockProjects(assetID) {
   ].filter((_, i) => !assetID.endsWith(String(i).padStart(2, '0'))) // 制造一些差异感
 }
 
+// 假"代码包列表":按时间倒序(最新在前)
+function mockPackages(projectPath) {
+  const seg = projectPath.split('/').pop() || 'app' // web / api / admin
+  // 固定一组版本号(从新到旧),保证每次看到的顺序一致
+  const versions = [
+    { v: 'v2.4.1', daysAgo: 0 },
+    { v: 'v2.4.0', daysAgo: 2 },
+    { v: 'v2.3.5', daysAgo: 5 },
+    { v: 'v2.3.4', daysAgo: 8 },
+    { v: 'v2.3.3', daysAgo: 12 },
+    { v: 'v2.3.0', daysAgo: 18 },
+    { v: 'v2.2.0', daysAgo: 26 }
+  ]
+  return versions.map((it, idx) => {
+    const d = new Date()
+    d.setDate(d.getDate() - it.daysAgo)
+    d.setHours(10 + idx, 20 + idx * 3, 0, 0)
+    return {
+      id: `${seg}-pkg-${idx + 1}`,
+      name: `${seg}-${it.v}.zip`,
+      time: formatDateTime(d),
+      size: `${(38 + idx * 1.7).toFixed(1)}MB`,
+      author: ['张伟', '李娜', '王强', '赵敏', '刘洋'][idx % 5]
+    }
+  })
+}
+
+function formatDateTime(d) {
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
 // =====================================================
 // 状态
 // =====================================================
@@ -93,7 +125,11 @@ const selectedAsset = ref(null) // {id, name, ip}
 const projectOptions = ref([])
 const loadingProjects = ref(false)
 const selectedProject = ref('')
-const commandPreview = ref('')
+const selectedPackage = ref(null) // {id, name, time}
+const packageDialogVisible = ref(false)
+const packageList = ref([])
+const loadingPackages = ref(false)
+const selectedPackageRow = ref(null) // 弹窗里当前选中的行
 const pulling = ref(false)
 const result = ref(null) // {type, text}
 
@@ -150,7 +186,7 @@ const assetCountText = computed(() => {
 })
 
 const canPull = computed(() =>
-  !!(selectedAsset.value && selectedProject.value && !pulling.value)
+  !!(selectedAsset.value && selectedProject.value && selectedPackage.value && !pulling.value)
 )
 
 // =====================================================
@@ -167,9 +203,9 @@ function loadAssets() {
 
 function selectAsset(asset) {
   selectedAsset.value = asset
-  // 重置项目 + 命令
+  // 重置项目 + 代码包
   selectedProject.value = ''
-  commandPreview.value = ''
+  selectedPackage.value = null
   result.value = null
   loadProjects(asset.id)
 }
@@ -177,8 +213,8 @@ function selectAsset(asset) {
 function reselectAsset() {
   selectedAsset.value = null
   selectedProject.value = ''
+  selectedPackage.value = null
   projectOptions.value = []
-  commandPreview.value = ''
   result.value = null
 }
 
@@ -193,21 +229,67 @@ function loadProjects(assetID) {
 
 function onProjectChange(path) {
   if (!path) {
-    commandPreview.value = ''
+    selectedPackage.value = null
     return
   }
-  commandPreview.value = `cd ${path} && git pull`
+  // 重新选了项目 → 清掉之前选的包,弹窗重新选
+  selectedPackage.value = null
+  packageDialogVisible.value = true
+  loadPackages(path)
+}
+
+function loadPackages(path) {
+  loadingPackages.value = true
+  packageList.value = []
+  selectedPackageRow.value = null
+  setTimeout(() => {
+    packageList.value = mockPackages(path)
+    loadingPackages.value = false
+  }, 200)
+}
+
+function onPackageRowClick(row) {
+  selectedPackageRow.value = row
+}
+
+function onPackageRowDblClick(row) {
+  // 双击行 = 直接选中并确认
+  selectedPackageRow.value = row
+  confirmPackage()
+}
+
+function confirmPackage() {
+  if (!selectedPackageRow.value) {
+    ElMessage.warning('请先选择一个代码包')
+    return
+  }
+  selectedPackage.value = { ...selectedPackageRow.value }
+  packageDialogVisible.value = false
+}
+
+function reopenPackageDialog() {
+  if (!selectedProject.value) return
+  packageDialogVisible.value = true
+  loadPackages(selectedProject.value)
+}
+
+function onPackageDialogClose() {
+  // 没选包就关掉 = 取消 = 重置项目下拉
+  if (!selectedPackage.value) {
+    selectedProject.value = ''
+  }
 }
 
 async function handlePull() {
   if (!canPull.value) return
   const id = selectedAsset.value.id
   const path = selectedProject.value
+  const pkg = selectedPackage.value
   pulling.value = true
   result.value = {
     type: 'info',
     title: '执行中',
-    text: `⏳ 正在执行: cd ${path} && git pull && chown -R www.www ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
+    text: `⏳ 正在部署代码包 ${pkg.name}\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
   }
   // 模拟接口调用,80% 成功 20% 失败
   await new Promise(res => setTimeout(res, 1500 + Math.random() * 1500))
@@ -217,14 +299,14 @@ async function handlePull() {
     result.value = {
       type: 'success',
       title: '拉取成功',
-      text: `✓ 拉取成功\n命令: cd ${path} && git pull && chown -R www.www ${path}\n成功资产: ${selectedAsset.value.name} (${selectedAsset.value.ip})\n耗时: ${timeCost}s`
+      text: `✓ 部署成功\n代码包: ${pkg.name} (${pkg.time})\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n耗时: ${timeCost}s`
     }
     pushRecent(id)
   } else {
     result.value = {
       type: 'error',
       title: '拉取失败',
-      text: `✗ 拉取失败\n命令: cd ${path} && git pull && chown -R www.www ${path}\n失败的: ${selectedAsset.value.name} (${selectedAsset.value.ip})\n错误: Git pull 失败: fatal: unable to access...`
+      text: `✗ 部署失败\n代码包: ${pkg.name} (${pkg.time})\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n错误: 部署失败: target host unreachable`
     }
   }
   pulling.value = false
@@ -236,7 +318,6 @@ function handleLogout() {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    // 假数据场景下,清一下 recents 并跳到登录页
     localStorage.removeItem('token')
     ElMessage.success('已退出')
     router.push('/login')
@@ -257,6 +338,7 @@ onMounted(() => {
         <el-icon :size="22"><Tools /></el-icon>
         <span>代码拉取控制台</span>
       </div>
+      <el-button plain @click="handleLogout">退出</el-button>
     </header>
 
     <!-- 主卡片 -->
@@ -354,17 +436,30 @@ onMounted(() => {
 
       <el-divider />
 
-      <!-- 3. 执行命令 -->
+      <!-- 3. 选择代码包 -->
       <div class="field-label">
         <span class="num">3.</span>
-        <span>执行命令</span>
+        <span>选择代码包</span>
+        <span v-if="selectedPackage" class="count-text">已选 1 个</span>
       </div>
-      <el-input
-        v-model="commandPreview"
-        disabled
-        placeholder="选完项目自动显示"
-        size="default"
-      />
+      <div v-if="selectedPackage" class="selected-package">
+        <el-icon :size="20" color="#67c23a"><Folder /></el-icon>
+        <div class="pkg-info">
+          <div class="pkg-name">{{ selectedPackage.name }}</div>
+          <div class="pkg-meta">{{ selectedPackage.time }} · {{ selectedPackage.size }} · {{ selectedPackage.author }}</div>
+        </div>
+        <el-button size="small" plain @click="reopenPackageDialog" :icon="Refresh">重新选择</el-button>
+      </div>
+      <el-button
+        v-else
+        :disabled="!selectedProject"
+        plain
+        :icon="Folder"
+        @click="reopenPackageDialog"
+        style="width: 100%"
+      >
+        点击选择代码包
+      </el-button>
 
       <div style="margin-top: 20px;">
         <el-button
@@ -390,6 +485,37 @@ onMounted(() => {
         </el-alert>
       </div>
     </el-card>
+
+    <!-- 选择代码包弹窗 -->
+    <el-dialog
+      v-model="packageDialogVisible"
+      title="选择代码包"
+      width="700px"
+      :close-on-click-modal="false"
+      @close="onPackageDialogClose"
+    >
+      <el-table
+        :data="packageList"
+        v-loading="loadingPackages"
+        stripe
+        highlight-current-row
+        :current-row-key="selectedPackageRow?.id"
+        @row-click="onPackageRowClick"
+        @row-dblclick="onPackageRowDblClick"
+        max-height="420"
+        style="cursor: pointer;"
+      >
+        <el-table-column type="index" label="#" width="60" />
+        <el-table-column prop="name" label="包名" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="time" label="构建时间" width="180" />
+        <el-table-column prop="size" label="大小" width="90" />
+        <el-table-column prop="author" label="构建人" width="100" />
+      </el-table>
+      <template #footer>
+        <el-button @click="packageDialogVisible = false">取消</el-button>
+        <el-button type="primary" :icon="Check" @click="confirmPackage">确认选择</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -543,6 +669,34 @@ onMounted(() => {
 .mono {
   font-family: ui-monospace, Consolas, monospace;
   word-break: break-all;
+}
+
+.selected-package {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f0f9ff;
+  border: 1px solid #bae0ff;
+  border-radius: 6px;
+}
+
+.selected-package .pkg-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.selected-package .pkg-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2c3e50;
+  word-break: break-all;
+}
+
+.selected-package .pkg-meta {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 2px;
 }
 
 .result-wrap {
