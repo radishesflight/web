@@ -1,20 +1,16 @@
 /**
- * 系统管理路由模块
- *
- * 新设计:角色管理 + 角色菜单权限 融合成单页面 /system/roleMenu
- *   - 左侧:角色列表 + CRUD
- *   - 右侧:选中角色后,分配菜单和操作权限
+ * codeDeploy 模块路由
  *
  * 包含:
- *   /system/adminUsers   管理员管理(独立)
- *   /system/adminMenus   菜单管理(独立)
- *   /system/adminRoles   角色管理(独立,角色 CRUD,菜单分配在 roleMenu 页)
- *   /system/departments  部门管理(独立,给"看部门"用)
- *   /system/roleMenu     分配菜单和操作权限(独立)
+ *   /codeDeploy/online         代码拉取控制台(假数据,后续对接后端)
+ *   /codeDeploy/apkPackage     apk/前端包管理
+ *   /codeDeploy/businessProjects 业务项目(资产)管理 - 列表/CRUD/同步 JMS
  *
  * 加新页面的步骤:
- *   1. 在 src/views/system/<sub>/ 加 .vue
+ *   1. 在 src/views/codeDeploy/<sub>/ 加 .vue
  *   2. 在本文件加 { path, name, component, meta }
+ *   3. 在 admin_menus 表加一条 code/path 记录
+ *   4. 重启后端,SyncRoutes 自动同步 (method, path) 到 admin_menu_operations
  */
 export default [
   {
@@ -28,5 +24,11 @@ export default [
     name: 'ApkPackage',
     component: () => import('@/views/codeDeploy/online/ApkPackage.vue'),
     meta: { title: 'apk/前端包管理' },
+  },
+  {
+    path: '/codeDeploy/businessProjects',
+    name: 'BusinessProjects',
+    component: () => import('@/views/codeDeploy/businessProjects/BusinessProjects.vue'),
+    meta: { title: '资产列表' },
   },
 ]

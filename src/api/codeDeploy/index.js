@@ -11,8 +11,10 @@
  *   DELETE /api/codeDeploy/projects/:id               删除
  *   GET    /api/codeDeploy/packages?project_id=&endpoint_id=  代码包列表
  *   GET    /api/codeDeploy/packages/:id               单个代码包
+ *   GET    /api/codeDeploy/packages/:id/download-url  OSS 签名下载 URL
  *   POST   /api/codeDeploy/packages                   上传 (multipart/form-data)
  *   POST   /api/codeDeploy/packages/:id/pull          触发部署(目前 mock)
+ *   DELETE /api/codeDeploy/packages/:id               删除代码包
  *
  * 字段约定:
  *   - 后端时间格式: "2006-01-02 15:04:05" (字符串)
@@ -167,5 +169,77 @@ export function pullPackage(id) {
   return request({
     url: `/api/codeDeploy/packages/${id}/pull`,
     method: 'post'
+  })
+}
+
+/**
+ * 同步业务项目(从 JumpServer 拉节点树,增量 upsert)
+ * POST /api/codeDeploy/projects/sync
+ * @returns {Promise<{data: {added, updated, removed, total_jms, total_local}}>}
+ */
+export function syncProjects() {
+  return request({
+    url: '/api/codeDeploy/projects/sync',
+    method: 'post'
+  })
+}
+
+/**
+ * 同步业务资产(从 JumpServer 拉资产列表,按 nodes[0] 关联到项目)
+ * POST /api/codeDeploy/assets/sync
+ * @returns {Promise<{data: {added, updated, removed, total_jms, total_local}}>}
+ */
+export function syncAssets() {
+  return request({
+    url: '/api/codeDeploy/assets/sync',
+    method: 'post'
+  })
+}
+
+/**
+ * 一键同步:项目 + 资产(顺序执行,前端一个按钮)
+ * POST /api/codeDeploy/sync
+ * @returns {Promise<{data: {projects, assets, project_err?, asset_err?}}>}
+ */
+export function syncAll() {
+  return request({
+    url: '/api/codeDeploy/sync',
+    method: 'post'
+  })
+}
+
+/**
+ * 查某项目下的所有资产
+ * GET /api/codeDeploy/projects/:id/assets
+ * @param {number} projectId
+ * @returns {Promise<{data: {list: Array}}>}
+ */
+export function getProjectAssets(projectId) {
+  return request({
+    url: `/api/codeDeploy/projects/${projectId}/assets`,
+    method: 'get'
+  })
+}
+
+/**
+ * 获取下载链接(后端返回 OSS 签名 URL,1小时有效,带 Content-Disposition: attachment)
+ * @param {number} id
+ * @returns {Promise<{data: string}>}
+ */
+export function getPackageDownloadURL(id) {
+  return request({
+    url: `/api/codeDeploy/packages/${id}/download-url`,
+    method: 'get'
+  })
+}
+
+/**
+ * 删除代码包(软删 DB + 删 OSS)
+ * @param {number} id
+ */
+export function deletePackage(id) {
+  return request({
+    url: `/api/codeDeploy/packages/${id}`,
+    method: 'delete'
   })
 }
