@@ -4,7 +4,13 @@
  * 接口:
  *   GET    /api/codeDeploy/endpoints                  端字典(下拉用)
  *   GET    /api/codeDeploy/projects/tree              整棵树(项目 + 端)
+ *   GET    /api/codeDeploy/projects                   项目列表
+ *   GET    /api/codeDeploy/projects/:id               单个项目
+ *   POST   /api/codeDeploy/projects                   新建
+ *   PUT    /api/codeDeploy/projects/:id               更新
+ *   DELETE /api/codeDeploy/projects/:id               删除
  *   GET    /api/codeDeploy/packages?project_id=&endpoint_id=  代码包列表
+ *   GET    /api/codeDeploy/packages/:id               单个代码包
  *   POST   /api/codeDeploy/packages                   上传 (multipart/form-data)
  *   POST   /api/codeDeploy/packages/:id/pull          触发部署(目前 mock)
  *
@@ -47,6 +53,64 @@ export function getProjectTree() {
   })
 }
 
+/**
+ * 查项目列表(无端)
+ * @returns {Promise<{data: {list: Array}}>}
+ */
+export function getProjects() {
+  return request({
+    url: '/api/codeDeploy/projects',
+    method: 'get'
+  })
+}
+
+/**
+ * 单个项目 + 端列表
+ * @param {number} id
+ */
+export function getProject(id) {
+  return request({
+    url: `/api/codeDeploy/projects/${id}`,
+    method: 'get'
+  })
+}
+
+/**
+ * 新建业务项目
+ * @param {{code, name, description?, sort?, status?, endpoint_ids: number[]}} data
+ */
+export function createProject(data) {
+  return request({
+    url: '/api/codeDeploy/projects',
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 更新业务项目(全量替换端列表)
+ * @param {number} id
+ * @param {{code, name, description?, sort?, status?, endpoint_ids: number[]}} data
+ */
+export function updateProject(id, data) {
+  return request({
+    url: `/api/codeDeploy/projects/${id}`,
+    method: 'put',
+    data
+  })
+}
+
+/**
+ * 删除业务项目
+ * @param {number} id
+ */
+export function deleteProject(id) {
+  return request({
+    url: `/api/codeDeploy/projects/${id}`,
+    method: 'delete'
+  })
+}
+
 // =====================================================
 // 代码包
 // =====================================================
@@ -61,6 +125,17 @@ export function getPackages(params) {
     url: '/api/codeDeploy/packages',
     method: 'get',
     params
+  })
+}
+
+/**
+ * 单个代码包
+ * @param {number} id
+ */
+export function getPackage(id) {
+  return request({
+    url: `/api/codeDeploy/packages/${id}`,
+    method: 'get'
   })
 }
 
@@ -92,28 +167,5 @@ export function pullPackage(id) {
   return request({
     url: `/api/codeDeploy/packages/${id}/pull`,
     method: 'post'
-  })
-}
-
-/**
- * 获取下载链接(后端返回 OSS 签名 URL,1小时有效,带 Content-Disposition: attachment)
- * @param {number} id
- * @returns {Promise<{data: string}>}
- */
-export function getPackageDownloadURL(id) {
-  return request({
-    url: `/api/codeDeploy/packages/${id}/download-url`,
-    method: 'get'
-  })
-}
-
-/**
- * 删除代码包(软删 DB + 删 OSS)
- * @param {number} id
- */
-export function deletePackage(id) {
-  return request({
-    url: `/api/codeDeploy/packages/${id}`,
-    method: 'delete'
   })
 }
