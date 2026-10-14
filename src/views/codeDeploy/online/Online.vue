@@ -6,130 +6,37 @@
    - assets  → GET /api/codeDeploy/assets
    - projects → GET /api/codeDeploy/assets/:id/projects
    - pull    → POST /api/codeDeploy/assets/:id/git-pull
+  第 3 步"上传代码包"参照 ApkPackage.vue 的文件夹上传:
+   选文件夹 → JSZip 整目录打包 → 拉取时随包部署
 -->
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Tools, Refresh, Promotion, Check, Folder } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, nextTick } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Search, Tools, Refresh, Promotion, UploadFilled } from '@element-plus/icons-vue'
+import JSZip from 'jszip'
+import { getAssets, getAssetPaths } from '@/api/codeDeploy'
 
-const router = useRouter()
-
-// =====================================================
-// 假数据
-// =====================================================
-const mockAssets = [
-  { id: 'a-001', name: '东平一腾服务器', ip: '47.92.254.58' },
-  { id: 'a-002', name: '云红前台01', ip: '182.44.119.32' },
-  { id: 'a-003', name: '云红前台02', ip: '182.44.119.29' },
-  { id: 'a-004', name: '云红前台03', ip: '182.44.117.237' },
-  { id: 'a-005', name: '云红后台', ip: '182.44.119.31' },
-  { id: 'a-006', name: '云红控销前台', ip: '113.250.187.37' },
-  { id: 'a-007', name: '云红控销后台', ip: '113.250.184.214' },
-  { id: 'a-008', name: '云红直播', ip: '182.44.119.30' },
-  { id: 'a-009', name: '点药官网', ip: '47.104.21.108' },
-  { id: 'a-010', name: '点药H5', ip: '47.104.22.55' },
-  { id: 'a-011', name: '点药后台', ip: '47.104.23.66' },
-  { id: 'a-012', name: '点药-控销前台', ip: '47.104.24.77' },
-  { id: 'a-013', name: '点药-控销后台', ip: '47.104.25.88' },
-  { id: 'a-014', name: '点药直播', ip: '47.104.26.99' },
-  { id: 'a-015', name: '点药小程序API', ip: '47.104.27.10' },
-  { id: 'a-016', name: '点药支付中心', ip: '47.104.28.21' },
-  { id: 'a-017', name: '点药订单中台', ip: '47.104.29.32' },
-  { id: 'a-018', name: '点药-ERP', ip: '47.104.30.43' },
-  { id: 'a-019', name: '点药-财务系统', ip: '47.104.31.54' },
-  { id: 'a-020', name: '点药-报表系统', ip: '47.104.32.65' },
-  { id: 'a-021', name: '云红-ERP', ip: '182.44.120.10' },
-  { id: 'a-022', name: '云红-财务系统', ip: '182.44.120.11' },
-  { id: 'a-023', name: '云红-报表系统', ip: '182.44.120.12' },
-  { id: 'a-024', name: '云红-支付中心', ip: '182.44.120.13' },
-  { id: 'a-025', name: '云红-订单中台', ip: '182.44.120.14' },
-  { id: 'a-026', name: '云红-小程序API', ip: '182.44.120.15' },
-  { id: 'a-027', name: '云红-营销活动', ip: '182.44.120.16' },
-  { id: 'a-028', name: '云红-优惠券', ip: '182.44.120.17' },
-  { id: 'a-029', name: '云红-会员系统', ip: '182.44.120.18' },
-  { id: 'a-030', name: '云红-门店管理', ip: '182.44.120.19' },
-  { id: 'a-031', name: '点药-门店管理', ip: '47.104.33.76' },
-  { id: 'a-032', name: '点药-会员系统', ip: '47.104.34.87' },
-  { id: 'a-033', name: '点药-优惠券', ip: '47.104.35.98' },
-  { id: 'a-034', name: '点药-营销活动', ip: '47.104.36.09' },
-  { id: 'a-035', name: '云红-商品中心', ip: '182.44.120.20' },
-  { id: 'a-036', name: '云红-库存管理', ip: '182.44.120.21' },
-  { id: 'a-037', name: '云红-物流系统', ip: '182.44.120.22' },
-  { id: 'a-038', name: '点药-商品中心', ip: '47.104.37.20' },
-  { id: 'a-039', name: '点药-库存管理', ip: '47.104.38.31' },
-  { id: 'a-040', name: '点药-物流系统', ip: '47.104.39.42' },
-  { id: 'a-041', name: '点药-数据中台', ip: '47.104.40.53' },
-  { id: 'a-042', name: '云红-数据中台', ip: '182.44.120.23' },
-  { id: 'a-043', name: '点药-客服系统', ip: '47.104.41.64' },
-  { id: 'a-044', name: '云红-客服系统', ip: '182.44.120.24' },
-  { id: 'a-045', name: '点药-消息推送', ip: '47.104.42.75' },
-  { id: 'a-046', name: '云红-消息推送', ip: '182.44.120.25' },
-  { id: 'a-047', name: '点药-搜索服务', ip: '47.104.43.86' },
-  { id: 'a-048', name: '云红-搜索服务', ip: '182.44.120.26' },
-  { id: 'a-049', name: '点药-风控系统', ip: '47.104.44.97' },
-  { id: 'a-050', name: '云红-风控系统', ip: '182.44.120.27' },
-  { id: 'a-051', name: '点药-定时任务', ip: '47.104.45.08' },
-  { id: 'a-052', name: '云红-定时任务', ip: '182.44.120.28' },
-  { id: 'a-053', name: '点药-日志收集', ip: '47.104.46.19' }
-]
-
-// 假"项目配置":每个资产都配 2~3 个可拉取项目
-function mockProjects(assetID) {
-  return [
-    { name: 'web前台', path: '/data/www/web' },
-    { name: '后台API', path: '/data/www/api' },
-    { name: '管理后台', path: '/data/www/admin' }
-  ].filter((_, i) => !assetID.endsWith(String(i).padStart(2, '0'))) // 制造一些差异感
-}
-
-// 假"代码包列表":按时间倒序(最新在前)
-function mockPackages(projectPath) {
-  const seg = projectPath.split('/').pop() || 'app' // web / api / admin
-  // 固定一组版本号(从新到旧),保证每次看到的顺序一致
-  const versions = [
-    { v: 'v2.4.1', daysAgo: 0 },
-    { v: 'v2.4.0', daysAgo: 2 },
-    { v: 'v2.3.5', daysAgo: 5 },
-    { v: 'v2.3.4', daysAgo: 8 },
-    { v: 'v2.3.3', daysAgo: 12 },
-    { v: 'v2.3.0', daysAgo: 18 },
-    { v: 'v2.2.0', daysAgo: 26 }
-  ]
-  return versions.map((it, idx) => {
-    const d = new Date()
-    d.setDate(d.getDate() - it.daysAgo)
-    d.setHours(10 + idx, 20 + idx * 3, 0, 0)
-    return {
-      id: `${seg}-pkg-${idx + 1}`,
-      name: `${seg}-${it.v}.zip`,
-      time: formatDateTime(d),
-      size: `${(38 + idx * 1.7).toFixed(1)}MB`,
-      author: ['张伟', '李娜', '王强', '赵敏', '刘洋'][idx % 5]
-    }
-  })
-}
-
-function formatDateTime(d) {
-  const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-}
+// 前端文件夹总大小限制(与 ApkPackage.vue 一致)
+const FOLDER_SIZE_LIMIT = 300 * 1024 * 1024
 
 // =====================================================
 // 状态
 // =====================================================
+// 资产数据从后端 /api/codeDeploy/assets 拉(business_assets 表,status=1)
+// 字段(后端 formatAsset 返回):id, project_id, jms_id, name, address, platform, os, protocol, port, comment, status
 const allAssets = ref([])
 const loadingAssets = ref(false)
 const filter = ref('')
-const selectedAsset = ref(null) // {id, name, ip}
+const selectedAsset = ref(null) // {id, name, address, project_id, ...}
 const projectOptions = ref([])
 const loadingProjects = ref(false)
 const selectedProject = ref('')
-const selectedPackage = ref(null) // {id, name, time}
-const packageDialogVisible = ref(false)
-const packageList = ref([])
-const loadingPackages = ref(false)
-const selectedPackageRow = ref(null) // 弹窗里当前选中的行
+// 第 3 步:上传代码包(文件夹模式,参照 ApkPackage.vue)
+const uploadedPackage = ref(null)   // {name, fileCount, sizeMB, zipFile}
+const selectedFiles = ref([])       // 文件夹模式的文件列表
+const packing = ref(false)          // JSZip 打包中
+const packingProgress = ref(0)      // 打包进度 0~100
+const fileInputRef = ref(null)      // native input 引用,手动设 webkitdirectory
 const pulling = ref(false)
 const result = ref(null) // {type, text}
 
@@ -163,7 +70,8 @@ const filteredAssets = computed(() => {
   const q = filter.value.trim().toLowerCase()
   if (!q) return allAssets.value
   return allAssets.value.filter(a =>
-    a.name.toLowerCase().includes(q) || a.ip.toLowerCase().includes(q)
+    (a.name || '').toLowerCase().includes(q) ||
+    (a.address || '').toLowerCase().includes(q)
   )
 })
 
@@ -186,97 +94,190 @@ const assetCountText = computed(() => {
 })
 
 const canPull = computed(() =>
-  !!(selectedAsset.value && selectedProject.value && selectedPackage.value && !pulling.value)
+  !!(selectedAsset.value && selectedProject.value && uploadedPackage.value && !pulling.value && !packing.value)
 )
+
+// 第 2 步下拉 placeholder:跟着 3 种状态走
+//  - 没选资产 → 提示先选资产
+//  - 已选资产但还在加载路径 → 提示正在加载
+//  - 加载完了 → 提示选择项目
+const projectPlaceholder = computed(() => {
+  if (!selectedAsset.value) return '-- 请先选资产 --'
+  if (loadingProjects.value) return '正在加载项目路径...'
+  return '请选择要拉取的项目路径'
+})
 
 // =====================================================
 // 操作
 // =====================================================
-function loadAssets() {
+async function loadAssets() {
   loadingAssets.value = true
-  // 模拟异步
-  setTimeout(() => {
-    allAssets.value = mockAssets
+  try {
+    const { data } = await getAssets()
+    allAssets.value = data?.list || []
+  } catch (e) {
+    console.error('[loadAssets] failed:', e)
+    const detail = e?.msg || e?.message || '网络异常'
+    ElMessage.error(`加载资产列表失败: ${detail}`)
+    allAssets.value = []
+  } finally {
     loadingAssets.value = false
-  }, 200)
+  }
 }
 
 function selectAsset(asset) {
   selectedAsset.value = asset
-  // 重置项目 + 代码包
+  // 重置项目 + 已上传包
   selectedProject.value = ''
-  selectedPackage.value = null
+  uploadedPackage.value = null
+  selectedFiles.value = []
   result.value = null
-  loadProjects(asset.id)
+  loadProjects(asset)
 }
 
 function reselectAsset() {
   selectedAsset.value = null
   selectedProject.value = ''
-  selectedPackage.value = null
+  uploadedPackage.value = null
+  selectedFiles.value = []
   projectOptions.value = []
   result.value = null
 }
 
-function loadProjects(assetID) {
+// 第 2 步:从选中的资产找它所属项目下的可拉取目录(BusinessAssetPaths 表)
+// 业务侧:资产下的路径是人工维护的,每条对应一个可 pull 的目录
+// 字段(后端 formatAssetPath 返回):id, asset_id, name(展示名,前端用), path(实际路径)
+async function loadProjects(asset) {
   loadingProjects.value = true
   projectOptions.value = []
-  setTimeout(() => {
-    projectOptions.value = mockProjects(assetID)
+  try {
+    const { data } = await getAssetPaths(asset.id)
+    const paths = data?.list || []
+    // 塑成下拉用的 {name, path}:name 用于下拉展示(可能为空,fallback 到 path)
+    projectOptions.value = paths.map(p => ({
+      id: p.id,
+      name: p.name || p.path,
+      path: p.path
+    }))
+  } catch (e) {
+    console.error('[loadProjects] failed:', e)
+    const detail = e?.msg || e?.message || '网络异常'
+    ElMessage.error(`加载项目列表失败: ${detail}`)
+    projectOptions.value = []
+  } finally {
     loadingProjects.value = false
-  }, 150)
+  }
 }
 
 function onProjectChange(path) {
   if (!path) {
-    selectedPackage.value = null
+    uploadedPackage.value = null
+    selectedFiles.value = []
     return
   }
-  // 重新选了项目 → 清掉之前选的包,弹窗重新选
-  selectedPackage.value = null
-  packageDialogVisible.value = true
-  loadPackages(path)
+  // 重新选了项目 → 清掉之前上传的包(包是跟着项目走的)
+  uploadedPackage.value = null
+  selectedFiles.value = []
 }
 
-function loadPackages(path) {
-  loadingPackages.value = true
-  packageList.value = []
-  selectedPackageRow.value = null
-  setTimeout(() => {
-    packageList.value = mockPackages(path)
-    loadingPackages.value = false
-  }, 200)
-}
-
-function onPackageRowClick(row) {
-  selectedPackageRow.value = row
-}
-
-function onPackageRowDblClick(row) {
-  // 双击行 = 直接选中并确认
-  selectedPackageRow.value = row
-  confirmPackage()
-}
-
-function confirmPackage() {
-  if (!selectedPackageRow.value) {
-    ElMessage.warning('请先选择一个代码包')
-    return
-  }
-  selectedPackage.value = { ...selectedPackageRow.value }
-  packageDialogVisible.value = false
-}
-
-function reopenPackageDialog() {
+// =====================================================
+// 第 3 步:上传代码包(文件夹模式,参照 ApkPackage.vue)
+// =====================================================
+function triggerFileInput() {
   if (!selectedProject.value) return
-  packageDialogVisible.value = true
-  loadPackages(selectedProject.value)
+  fileInputRef.value?.click()
 }
 
-function onPackageDialogClose() {
-  // 没选包就关掉 = 取消 = 重置项目下拉
-  if (!selectedPackage.value) {
-    selectedProject.value = ''
+// 同步 webkitdirectory 属性到 native input(Vue 模板渲染不靠谱,手动设)
+// 本页只有文件夹模式(整目录打包成 zip)
+function syncWebkitDirectory() {
+  const input = fileInputRef.value
+  if (!input) return
+  input.setAttribute('webkitdirectory', '')
+  input.setAttribute('directory', '')
+  input.setAttribute('mozdirectory', '')
+  input.setAttribute('multiple', '')
+}
+
+// native input 选完文件后触发:整目录替换 + 大小检查 + 自动打包
+function onNativeFileChange(e) {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) return
+  // 清空 input 的 value,允许选同一个文件夹
+  if (fileInputRef.value) fileInputRef.value.value = ''
+
+  // 大小限制
+  const total = files.reduce((sum, f) => sum + (f.size || 0), 0)
+  if (total > FOLDER_SIZE_LIMIT) {
+    ElMessage.warning(`文件夹总大小 ${(total / 1024 / 1024).toFixed(1)}MB 超过 300MB 限制,请清理后再选`)
+    clearUploaded()
+    return
+  }
+
+  // 0 字节检查
+  const empty = files.filter(f => f.size === 0)
+  if (empty.length === files.length) {
+    ElMessage.warning(`所选文件夹里 ${empty.length} 个文件都是 0 字节,无法上传`)
+    clearUploaded()
+    return
+  }
+  if (empty.length > 0) {
+    ElMessage.warning(`已忽略 ${empty.length} 个 0 字节文件`)
+  }
+
+  selectedFiles.value = files
+  uploadedPackage.value = null
+  packSelectedFolder()
+}
+
+function clearUploaded() {
+  selectedFiles.value = []
+  uploadedPackage.value = null
+  packing.value = false
+  packingProgress.value = 0
+  if (fileInputRef.value) fileInputRef.value.value = ''
+}
+
+// 文件夹 → JSZip 打包成 zip File
+// 关键:提前 await file.arrayBuffer() 把 file 转成内存 ArrayBuffer,
+//       不依赖原 file 引用(input.value 清空后 file 引用会失效)
+async function packSelectedFolder() {
+  if (selectedFiles.value.length === 0) return
+  packing.value = true
+  packingProgress.value = 0
+  try {
+    const zip = new JSZip()
+    const total = selectedFiles.value.length
+    const usedNames = new Set()
+    for (let i = 0; i < total; i++) {
+      const f = selectedFiles.value[i]
+      let rel = f.webkitRelativePath || f.name
+      if (!rel) rel = `file_${i}`
+      // 防止重名:加序号后缀
+      let unique = rel
+      let n = 1
+      while (usedNames.has(unique)) {
+        const dot = rel.lastIndexOf('.')
+        unique = dot > 0
+          ? `${rel.slice(0, dot)}_${n}${rel.slice(dot)}`
+          : `${rel}_${n}`
+        n++
+      }
+      usedNames.add(unique)
+      const buf = await f.arrayBuffer()
+      zip.file(unique, buf)
+      packingProgress.value = Math.round(((i + 1) / total) * 100)
+    }
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+    const folderName = (selectedFiles.value[0].webkitRelativePath || '').split('/')[0] || 'package'
+    uploadedPackage.value = {
+      name: `${folderName}.zip`,
+      fileCount: total,
+      sizeMB: (blob.size / 1024 / 1024).toFixed(2),
+      zipFile: new File([blob], `${folderName}.zip`, { type: 'application/zip' })
+    }
+  } finally {
+    packing.value = false
   }
 }
 
@@ -284,12 +285,12 @@ async function handlePull() {
   if (!canPull.value) return
   const id = selectedAsset.value.id
   const path = selectedProject.value
-  const pkg = selectedPackage.value
+  const pkg = uploadedPackage.value
   pulling.value = true
   result.value = {
     type: 'info',
     title: '执行中',
-    text: `⏳ 正在部署代码包 ${pkg.name}\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
+    text: `⏳ 正在部署代码包 ${pkg.name} (${pkg.sizeMB}MB · ${pkg.fileCount} 个文件)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
   }
   // 模拟接口调用,80% 成功 20% 失败
   await new Promise(res => setTimeout(res, 1500 + Math.random() * 1500))
@@ -299,34 +300,24 @@ async function handlePull() {
     result.value = {
       type: 'success',
       title: '拉取成功',
-      text: `✓ 部署成功\n代码包: ${pkg.name} (${pkg.time})\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n耗时: ${timeCost}s`
+      text: `✓ 部署成功\n代码包: ${pkg.name} (${pkg.sizeMB}MB)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n耗时: ${timeCost}s`
     }
     pushRecent(id)
   } else {
     result.value = {
       type: 'error',
       title: '拉取失败',
-      text: `✗ 部署失败\n代码包: ${pkg.name} (${pkg.time})\n目标: ${selectedAsset.value.name} (${selectedAsset.value.ip}) @ ${path}\n错误: 部署失败: target host unreachable`
+      text: `✗ 部署失败\n代码包: ${pkg.name} (${pkg.sizeMB}MB)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n错误: 部署失败: target host unreachable`
     }
   }
   pulling.value = false
 }
 
-function handleLogout() {
-  ElMessageBox.confirm('确定退出登录吗?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    localStorage.removeItem('token')
-    ElMessage.success('已退出')
-    router.push('/login')
-  }).catch(() => { /* 取消 */ })
-}
-
 onMounted(() => {
   loadRecents()
   loadAssets()
+  // 等 DOM 渲染完,同步 webkitdirectory 属性(只支持文件夹选择)
+  nextTick(() => syncWebkitDirectory())
 })
 </script>
 
@@ -338,7 +329,6 @@ onMounted(() => {
         <el-icon :size="22"><Tools /></el-icon>
         <span>代码拉取控制台</span>
       </div>
-      <el-button plain @click="handleLogout">退出</el-button>
     </header>
 
     <!-- 主卡片 -->
@@ -352,7 +342,7 @@ onMounted(() => {
         </div>
         <el-input
           v-model="filter"
-          placeholder="🔍 搜索资产名或 IP (如:点药 / 47.104)..."
+          placeholder="🔍 搜索资产名或地址 (如:点药 / 47.104)..."
           clearable
           :prefix-icon="Search"
           size="default"
@@ -378,7 +368,7 @@ onMounted(() => {
               {{ asset.name }}
               <span v-if="recentSet.has(asset.id)" class="recent-tag">最近</span>
             </span>
-            <span class="ip">{{ asset.ip }}</span>
+            <span class="ip">{{ asset.address }}</span>
           </div>
         </div>
       </template>
@@ -393,7 +383,7 @@ onMounted(() => {
           <div class="sel-name">{{ selectedAsset.name }}</div>
           <div class="sel-row">
             <span class="sel-label">IP:</span>
-            <span class="sel-value mono">{{ selectedAsset.ip }}</span>
+            <span class="sel-value mono">{{ selectedAsset.address }}</span>
           </div>
           <div class="sel-row">
             <span class="sel-label">ID:</span>
@@ -414,8 +404,8 @@ onMounted(() => {
       </div>
       <el-select
         v-model="selectedProject"
-        placeholder="-- 请先选资产 --"
-        :disabled="!selectedAsset"
+        :placeholder="projectPlaceholder"
+        :disabled="!selectedAsset || loadingProjects"
         :loading="loadingProjects"
         @change="onProjectChange"
         style="width: 100%"
@@ -436,30 +426,46 @@ onMounted(() => {
 
       <el-divider />
 
-      <!-- 3. 选择代码包 -->
+      <!-- 3. 上传代码包 -->
       <div class="field-label">
         <span class="num">3.</span>
-        <span>选择代码包</span>
-        <span v-if="selectedPackage" class="count-text">已选 1 个</span>
+        <span>上传代码包</span>
+        <span v-if="uploadedPackage" class="count-text">已选 {{ uploadedPackage.fileCount }} 个文件</span>
       </div>
-      <div v-if="selectedPackage" class="selected-package">
-        <el-icon :size="20" color="#67c23a"><Folder /></el-icon>
-        <div class="pkg-info">
-          <div class="pkg-name">{{ selectedPackage.name }}</div>
-          <div class="pkg-meta">{{ selectedPackage.time }} · {{ selectedPackage.size }} · {{ selectedPackage.author }}</div>
-        </div>
-        <el-button size="small" plain @click="reopenPackageDialog" :icon="Refresh">重新选择</el-button>
-      </div>
-      <el-button
-        v-else
-        :disabled="!selectedProject"
-        plain
-        :icon="Folder"
-        @click="reopenPackageDialog"
-        style="width: 100%"
+      <div
+        class="upload-drag"
+        :class="{ disabled: !selectedProject || packing }"
+        @click="triggerFileInput"
       >
-        点击选择代码包
-      </el-button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          style="display: none"
+          @change="onNativeFileChange"
+        />
+        <template v-if="!uploadedPackage && !packing">
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="upload-text">
+            <em>点击选择文件夹</em>(整目录自动打包成 zip 后部署)
+          </div>
+        </template>
+        <div class="upload-tip">
+          <template v-if="packing">
+            <el-progress :percentage="packingProgress" :stroke-width="14" style="flex: 1; max-width: 320px;" />
+            <span style="margin-left: 8px;">正在打包... {{ packingProgress }}%</span>
+          </template>
+          <template v-else-if="uploadedPackage">
+            已选: <strong>{{ uploadedPackage.name }}</strong>
+            · {{ uploadedPackage.fileCount }} 个文件
+            · {{ uploadedPackage.sizeMB }}MB
+            <span class="reselect-hint">(点击可重新选择)</span>
+          </template>
+          <template v-else>文件夹总大小不超过 300MB{{ selectedProject ? '' : ',请先选择项目' }}</template>
+        </div>
+      </div>
+      <div v-if="uploadedPackage && !packing" style="margin-top: 8px;">
+        <el-button size="small" plain @click="clearUploaded" :icon="Refresh">重新选择</el-button>
+      </div>
 
       <div style="margin-top: 20px;">
         <el-button
@@ -485,37 +491,6 @@ onMounted(() => {
         </el-alert>
       </div>
     </el-card>
-
-    <!-- 选择代码包弹窗 -->
-    <el-dialog
-      v-model="packageDialogVisible"
-      title="选择代码包"
-      width="700px"
-      :close-on-click-modal="false"
-      @close="onPackageDialogClose"
-    >
-      <el-table
-        :data="packageList"
-        v-loading="loadingPackages"
-        stripe
-        highlight-current-row
-        :current-row-key="selectedPackageRow?.id"
-        @row-click="onPackageRowClick"
-        @row-dblclick="onPackageRowDblClick"
-        max-height="420"
-        style="cursor: pointer;"
-      >
-        <el-table-column type="index" label="#" width="60" />
-        <el-table-column prop="name" label="包名" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="time" label="构建时间" width="180" />
-        <el-table-column prop="size" label="大小" width="90" />
-        <el-table-column prop="author" label="构建人" width="100" />
-      </el-table>
-      <template #footer>
-        <el-button @click="packageDialogVisible = false">取消</el-button>
-        <el-button type="primary" :icon="Check" @click="confirmPackage">确认选择</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -671,32 +646,63 @@ onMounted(() => {
   word-break: break-all;
 }
 
-.selected-package {
+/* ---- 第 3 步:上传代码包(与 ApkPackage.vue 风格一致) ---- */
+.upload-drag {
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  padding: 24px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafafa;
+  transition: border-color 0.2s;
+}
+
+.upload-drag:hover {
+  border-color: #409eff;
+}
+
+.upload-drag.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.upload-drag.disabled:hover {
+  border-color: #d9d9d9;
+}
+
+.upload-drag .el-icon--upload {
+  font-size: 48px;
+  color: #c0c4cc;
+  margin-bottom: 8px;
+}
+
+.upload-drag .upload-text {
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.upload-drag .upload-text em {
+  color: #409eff;
+  font-style: normal;
+  font-weight: 600;
+  margin: 0 2px;
+}
+
+.upload-drag .upload-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #909399;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #f0f9ff;
-  border: 1px solid #bae0ff;
-  border-radius: 6px;
+  justify-content: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-height: 20px;
 }
 
-.selected-package .pkg-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.selected-package .pkg-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #2c3e50;
-  word-break: break-all;
-}
-
-.selected-package .pkg-meta {
-  font-size: 12px;
-  color: #718096;
-  margin-top: 2px;
+.upload-drag .reselect-hint {
+  color: #c0c4cc;
 }
 
 .result-wrap {

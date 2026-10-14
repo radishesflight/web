@@ -209,6 +209,18 @@ export function syncAll() {
 }
 
 /**
+ * 查所有启用的业务资产(代码拉取控制台"选择资产"列表)
+ * GET /api/codeDeploy/assets
+ * @returns {Promise<{data: {list: Array<{id, project_id, jms_id, name, address, platform, os, protocol, port, comment, status, created_at, updated_at}>}}>}
+ */
+export function getAssets() {
+  return request({
+    url: '/api/codeDeploy/assets',
+    method: 'get'
+  })
+}
+
+/**
  * 查某项目下的所有资产
  * GET /api/codeDeploy/projects/:id/assets
  * @param {number} projectId
