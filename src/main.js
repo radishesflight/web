@@ -22,6 +22,8 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
+// 全局主题覆盖(现代精修风),必须在 element-plus css 之后加载
+import './assets/theme.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 import App from './App.vue'

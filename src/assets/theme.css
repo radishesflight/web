@@ -1,0 +1,70 @@
+/* =====================================================
+ * 全局主题覆盖 —— 现代精修风
+ *
+ * 加载时机:必须在 element-plus/dist/index.css 之后 import,
+ * 用同名 CSS 变量覆盖 Element Plus 默认值,达到全局统一调整。
+ *
+ * 覆盖内容:
+ *   1. 字号整体缩小 1 号(EP 组件全部读 --el-font-size-* 这组变量)
+ *   2. 控件圆角加大,卡片/弹窗 8px
+ *   3. 阴影更柔和
+ *   4. 表格表头/行 hover 精修
+ *   5. 侧边栏选中项高亮更明显
+ *   6. 全局滚动条细化
+ * ===================================================== */
+
+:root {
+  /* ---- 1. 字号缩小 1 号 ---- */
+  --el-font-size-extra-large: 19px;   /* 默认 20 */
+  --el-font-size-large: 17px;         /* 默认 18 */
+  --el-font-size-medium: 15px;        /* 默认 16 */
+  --el-font-size-base: 13px;          /* 默认 14,绝大多数组件的正文字号 */
+  --el-font-size-small: 11px;         /* 默认 12 */
+  --el-font-size-extra-small: 11px;   /* 默认 12 */
+
+  /* ---- 2. 圆角 ---- */
+  --el-border-radius-base: 6px;       /* 按钮/输入框/标签等基础控件 */
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 18px;
+
+  /* ---- 3. 柔和阴影 ---- */
+  --el-box-shadow: 0 1px 3px rgba(0, 21, 41, 0.06), 0 6px 16px rgba(0, 21, 41, 0.05);
+  --el-box-shadow-light: 0 1px 4px rgba(0, 21, 41, 0.05);
+  --el-box-shadow-lighter: 0 1px 2px rgba(0, 21, 41, 0.04);
+  --el-box-shadow-dark: 0 2px 8px rgba(0, 21, 41, 0.12);
+
+  /* ---- 4. 表格精修 ---- */
+  --el-table-header-bg-color: #f7f8fa;
+  --el-table-header-text-color: #303133;
+  --el-table-row-hover-bg-color: #f0f7ff;
+  --el-table-border-color: #ebeef5;
+}
+
+/* 卡片 / 弹窗 / 消息框 8px 圆角 */
+.el-card,
+.el-dialog,
+.el-message-box {
+  border-radius: 8px;
+}
+
+/* ---- 5. 侧边栏选中项高亮(左侧主色描边) ---- */
+.sidebar-menu .el-menu-item.is-active {
+  background-color: rgba(64, 158, 255, 0.12) !important;
+  box-shadow: inset 3px 0 0 var(--el-color-primary);
+}
+
+/* ---- 6. 全局细滚动条 ---- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.35);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.55);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
