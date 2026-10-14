@@ -41,15 +41,7 @@ export const useUserStore = defineStore('user', {
       if (!method || !path) return false
       const key = method.toUpperCase() + ' ' + path
       return state.permissions.includes(key)
-    },
-    /** 当前菜单树 */
-    getMenus: (state) => state.menus,
-    /** 当前用户信息 */
-    getUser: (state) => state.user,
-    /** 是否已登录(token 非空) */
-    isLoggedIn: (state) => !!state.token,
-    /** 当前用户部门 ID */
-    departmentId: (state) => state.user?.department_id ?? 0
+    }
   },
 
   actions: {
@@ -60,18 +52,6 @@ export const useUserStore = defineStore('user', {
     setToken(token) {
       this.token = token
       saveToken(token)
-    },
-
-    setUser(user) {
-      this.user = user
-    },
-
-    setMenus(menus) {
-      this.menus = menus
-    },
-
-    setPermissions(permissions) {
-      this.permissions = permissions
     },
 
     /**

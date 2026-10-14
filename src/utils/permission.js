@@ -25,13 +25,3 @@ export function hasRoute(method, path) {
   const userStore = useUserStore()
   return userStore.hasRoute(method, path)
 }
-
-/**
- * 判断当前用户是否有任一指定路由权限
- * @param {Array<{method: string, path: string}>} routes 路由列表
- * @returns {boolean} 任一满足即 true
- */
-export function hasAnyRoute(routes) {
-  const userStore = useUserStore()
-  return routes.some(r => userStore.hasRoute(r.method, r.path))
-}
