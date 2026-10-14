@@ -222,6 +222,42 @@ export function getProjectAssets(projectId) {
 }
 
 /**
+ * 查某资产下所有路径
+ * GET /api/codeDeploy/assets/:id/paths
+ */
+export function getAssetPaths(assetId) {
+  return request({
+    url: `/api/codeDeploy/assets/${assetId}/paths`,
+    method: 'get'
+  })
+}
+
+/**
+ * 给资产加一条路径
+ * POST /api/codeDeploy/assets/:id/paths
+ * @param {number} assetId
+ * @param {{name: string, path: string, sort?: number}} data
+ */
+export function addAssetPath(assetId, data) {
+  return request({
+    url: `/api/codeDeploy/assets/${assetId}/paths`,
+    method: 'post',
+    data
+  })
+}
+
+/**
+ * 删一条路径
+ * DELETE /api/codeDeploy/assets/paths/:id
+ */
+export function deleteAssetPath(pathId) {
+  return request({
+    url: `/api/codeDeploy/assets/paths/${pathId}`,
+    method: 'delete'
+  })
+}
+
+/**
  * 获取下载链接(后端返回 OSS 签名 URL,1小时有效,带 Content-Disposition: attachment)
  * @param {number} id
  * @returns {Promise<{data: string}>}
