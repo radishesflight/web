@@ -2,10 +2,10 @@
  * 菜单管理 API
  *
  * 接口(路径跟 menu.code 一致,中间件推断 adminMenus:*):
- *   GET    /api/system/adminMenus/list                    列表分页
- *   GET    /api/system/adminMenus/all                     所有菜单(带 operations,角色分配用)
- *   GET    /api/system/adminMenus/options                 parent_id=0 的菜单
- *   GET    /api/system/adminMenus/operations/:menu_id     某菜单的所有 operation
+ *   GET    /api/system/adminMenus/list                    列表分页(需 Permission)
+ *   GET    /api/system/adminMenus/all                     所有菜单(需 Permission)
+ *   GET    /api/system/adminMenus/options                 parent_id=0 的菜单(只需 Auth,不要 adminMenus 权限)
+ *   GET    /api/system/adminMenus/operations/:menu_id     某菜单的所有 operation(需 Permission)
  *   POST   /api/system/adminMenus                         新增
  *   PUT    /api/system/adminMenus/:id                     更新
  *   DELETE /api/system/adminMenus/:id                     删除
@@ -31,7 +31,10 @@ export function getAdminMenusList(params) {
 }
 
 /**
- * 父级菜单下拉选项
+ * 父级菜单下拉选项(只需 Auth,不需 adminMenus 权限)
+ *
+ * 用途:菜单管理"新增/编辑"页面选父级菜单。
+ * 后端只查 parent_id=0 且 status=1 的菜单。
  * @returns {Promise<{data: Array<{id, name}>}>}
  */
 export function getAdminMenusOptions() {

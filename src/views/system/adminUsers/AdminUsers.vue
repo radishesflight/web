@@ -3,7 +3,7 @@
 
   功能:
    - 列表分页(支持按 status 筛选)
-   - 角色下拉(从 adminRoles 接口拉)
+   - 角色下拉(从 adminRoles/options 接口拉 - 只需 Auth,不需 adminRoles 权限)
    - 新增 / 编辑 / 删除
    - 按钮级权限:hasRoute('POST', '/api/system/adminUsers')/'PUT'/'DELETE' 等
 
@@ -15,7 +15,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getAdminUsersList, createAdminUsers, updateAdminUsers, deleteAdminUsers } from '@/api/system/adminUsers'
-import { getAdminRolesList } from '@/api/system/adminRoles'
+import { getRoleOptions } from '@/api/system/adminRoles'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
@@ -43,8 +43,9 @@ const formData = ref({
 
 const fetchRoles = async () => {
   try {
-    const res = await getAdminRolesList({ page: 1, size: 100 })
-    rolesList.value = res.data.list || []
+    const res = await getRoleOptions()
+    // /options 直接返回 [{id, name}, ...],不包 {list, total}
+    rolesList.value = res.data || []
   } catch (error) {
     console.error('获取角色列表失败:', error)
   }
