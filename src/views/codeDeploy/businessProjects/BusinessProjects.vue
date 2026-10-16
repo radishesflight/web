@@ -11,7 +11,7 @@
   - 本模块只配置路径,不实际执行 SSH 命令(生产 JMS 禁命令)
 -->
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Refresh } from '@element-plus/icons-vue'
 import {
@@ -44,14 +44,31 @@ const pathsLoading = ref({})
 // 添加路径弹窗
 const pathDialogVisible = ref(false)
 const pathDialogAsset = ref(null) // 当前操作的 asset
-// type 选项(2026-10-16 新增):区分前端/后端/其他,后端 api/web/other,前端多显示"其他"
+// type 选项(2026-10-16 新增):区分前端/后端/其他;10-16 扩展 apk / ios(对应 APK包管理)
+//   api   — 后端 API 代码(Online.vue 后端API部署)
+//   web   — 前端 web 包(ApkPackage.vue 前端包管理)
+//   apk   — Android 安装包(ApkManagement.vue APK包管理)
+//   ios   — iOS 安装包(ApkManagement.vue APK包管理)
+//   other — 其它/预留
 const PATH_TYPE_OPTIONS = [
   { value: 'api', label: 'api' },
   { value: 'web', label: 'web' },
+  { value: 'apk', label: 'apk' },
+  { value: 'ios', label: 'ios' },
   { value: 'other', label: '其他' }
 ]
 const pathForm = ref({ name: '', path: '', type: 'web', sort: 0 })
 const pathSubmitting = ref(false)
+
+// 路径是否必填(2026-10-16 扩展):只有 api / web 真正部署到服务器路径才必填
+//   apk / ios 是 APK包管理,只挂代码包不部署,不需要服务端路径
+//   other 预留,也不强制
+const PATH_REQUIRE_TYPES = new Set(['api', 'web'])
+const isPathRequired = computed(() => PATH_REQUIRE_TYPES.has(pathForm.value.type))
+const pathPlaceholder = computed(() => {
+  if (isPathRequired.value) return '例:/home/www/web'
+  return 'apk/ios 可留空(仅记录,无需服务端路径)'
+})
 
 const fetchData = async () => {
   loading.value = true
@@ -135,8 +152,12 @@ const openPathDialog = (asset) => {
 }
 
 const submitPath = async () => {
-  if (!pathForm.value.name || !pathForm.value.path) {
-    ElMessage.warning('请填写路径名称和路径')
+  if (!pathForm.value.name) {
+    ElMessage.warning('请填写路径名称')
+    return
+  }
+  if (isPathRequired.value && !pathForm.value.path) {
+    ElMessage.warning('api / web 类型必须填写路径')
     return
   }
   pathSubmitting.value = true
@@ -282,6 +303,8 @@ onMounted(fetchData)
                     <template #default="{ row: p }">
                       <el-tag v-if="p.type === 'api'" type="primary" size="small">api</el-tag>
                       <el-tag v-else-if="p.type === 'web'" type="success" size="small">web</el-tag>
+                      <el-tag v-else-if="p.type === 'apk'" type="warning" size="small">apk</el-tag>
+                      <el-tag v-else-if="p.type === 'ios'" type="info" size="small">ios</el-tag>
                       <el-tag v-else-if="p.type === 'other'" size="small">其他</el-tag>
                       <span v-else class="type-empty">-</span>
                     </template>
@@ -315,10 +338,10 @@ onMounted(fetchData)
     <el-dialog v-model="pathDialogVisible" title="添加路径" width="500px">
       <el-form :model="pathForm" label-width="100px">
         <el-form-item label="路径名称" required>
-          <el-input v-model="pathForm.name" placeholder="例:前端web目录" />
+          <el-input v-model="pathForm.name" placeholder="例:前端web目录 / 安卓安装包" />
         </el-form-item>
-        <el-form-item label="路径" required>
-          <el-input v-model="pathForm.path" placeholder="例:/home/www/web" />
+        <el-form-item label="路径" :required="isPathRequired">
+          <el-input v-model="pathForm.path" :placeholder="pathPlaceholder" />
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="pathForm.type" style="width: 100%;">

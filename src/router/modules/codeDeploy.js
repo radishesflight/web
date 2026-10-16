@@ -37,4 +37,10 @@ export default [
     component: () => import('@/views/codeDeploy/operationLog/OperationLog.vue'),
     meta: { title: '部署日志' },
   },
+  {
+    path: '/codeDeploy/apkManagement',
+    name: 'ApkManagement',
+    component: () => import('@/views/codeDeploy/apkManagement/ApkManagement.vue'),
+    meta: { title: 'APK包管理' },
+  },
 ]
