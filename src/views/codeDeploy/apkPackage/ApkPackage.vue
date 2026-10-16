@@ -15,10 +15,10 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Refresh, UploadFilled, Promotion, Delete, Download } from '@element-plus/icons-vue'
+import { Search, Refresh, UploadFilled, Promotion, Delete, Download, Position } from '@element-plus/icons-vue'
 import JSZip from 'jszip'
 import { useUserStore } from '@/stores/user'
-import { getProjectsWithPaths, getPackages, uploadPackage, deletePackage, getPackageDownloadURL } from '@/api/codeDeploy'
+import { getProjectsWithPaths, getPackages, uploadPackage, deletePackage, getPackageDownloadURL, pullPackage } from '@/api/codeDeploy'
 
 const userStore = useUserStore()
 const FOLDER_SIZE_LIMIT = 300 * 1024 * 1024
@@ -88,6 +88,12 @@ const canDelete = computed(function () {
 const canDownload = computed(function () {
   return userStore.hasRoute('GET', '/api/codeDeploy/packages/:id/download-url')
 })
+const canDeploy = computed(function () {
+  return userStore.hasRoute('POST', '/api/codeDeploy/packages/:id/pull')
+})
+
+// 部署:跟踪当前正在部署的包 id(避免同页面多个包都 loading)
+const deployingID = ref(0)
 
 // 加载
 async function loadTree() {
@@ -283,6 +289,61 @@ async function handleDownloadPackage(pkg) {
   }
 }
 
+// 部署包:调 pullPackage,后端调 JMS ad-hoc 任务,内部轮询到终态后返回
+//   - 5min axios timeout(在 api/codeDeploy/index.js 的 pullPackage 已配)
+//   - 部署目标:该包所属的 asset/asset_path(后端从 code_packages 读,不需要前端传)
+//   - 同一时刻只允许一个包在部署(防误点),loading 状态按包 id 区分
+async function handleDeployPackage(pkg) {
+  if (!canDeploy.value) {
+    ElMessage.warning('当前角色无部署权限')
+    return
+  }
+  if (deployingID.value && deployingID.value !== pkg.id) {
+    ElMessage.warning('已有另一个包在部署中,请等待完成')
+    return
+  }
+  // 简单确认(防止误点)
+  try {
+    await ElMessageBox.confirm(
+      '确认部署包 ' + (pkg.full_name || pkg.name) + '?这会通过 JumpServer 拉起 ad-hoc 任务,1-3 分钟。',
+      '部署代码包',
+      { confirmButtonText: '开始部署', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  deployingID.value = pkg.id
+  try {
+    const { data: res } = await pullPackage(pkg.id)
+    const timeCost = (res && res.time_cost) || 0
+    if (res && res.success) {
+      ElMessage.success('部署成功: ' + (pkg.full_name || pkg.name) + ' (耗时 ' + timeCost.toFixed(2) + 's)')
+    } else {
+      const detail = (res && (res.err || res.status)) || '远端任务失败'
+      const failMsg = (res && res.material) ? res.material.trim().split('\n').slice(-5).join('\n') : ''
+      ElMessage.error('部署失败: ' + detail + (failMsg ? '\n' + failMsg : ''))
+    }
+  } catch (e) {
+    // axios 拦截器 reject 的 error 对象上有 code/data
+    const detail = (e && (e.msg || e.message)) || '网络异常'
+    let failMsg = ''
+    if (e && e.data) {
+      if (e.data.summary && e.data.summary.failures) {
+        const fails = e.data.summary.failures
+        const assetName = (selectedNode.value && selectedNode.value.data && selectedNode.value.data.name) || ''
+        failMsg = (fails[assetName] || Object.values(fails)[0] || '')
+      } else if (e.data.material) {
+        failMsg = e.data.material
+      } else if (e.data.err) {
+        failMsg = e.data.err
+      }
+    }
+    ElMessage.error('部署失败: ' + detail + (failMsg ? '\n' + (failMsg.split ? failMsg.split('\n').slice(-5).join('\n') : failMsg) : ''))
+  } finally {
+    deployingID.value = 0
+  }
+}
+
 // 删除包
 async function handleDeletePackage(pkg) {
   if (!canDelete.value) {
@@ -321,6 +382,7 @@ function clearSelection() {
   selectedNode.value = null
   packages.value = []
 }
+void clearSelection  // 保留供以后需要清空选择时用(目前未绑定按钮)
 
 onMounted(function () {
   loadTree()
@@ -337,13 +399,6 @@ onMounted(function () {
             <div class="left-header">
               <span class="left-title">业务项目 / 端</span>
               <div class="left-actions">
-                <el-button
-                  size="small"
-                  type="primary"
-                  :icon="UploadFilled"
-                  :disabled="!selectedPathID"
-                  @click="triggerFilePicker"
-                >上传代码包</el-button>
                 <el-button size="small" :icon="Refresh" @click="loadTree">刷新</el-button>
               </div>
             </div>
@@ -378,7 +433,14 @@ onMounted(function () {
           <template #header>
             <div class="right-header">
               <span class="right-title">详情</span>
-              <el-button v-if="selectedNode" size="small" :icon="Refresh" @click="clearSelection">清空选择</el-button>
+              <el-button
+                v-if="selectedNode && selectedNode.kind === 'path'"
+                size="small"
+                type="primary"
+                :icon="UploadFilled"
+                :loading="uploading || packing"
+                @click="triggerFilePicker"
+              >上传代码包</el-button>
             </div>
           </template>
 
@@ -461,8 +523,17 @@ onMounted(function () {
                   <el-tag v-else type="info" size="small">已下架</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column v-if="canDelete || canDownload" label="操作" width="160" fixed="right">
+              <el-table-column v-if="canDelete || canDownload || canDeploy" label="操作" width="220" fixed="right">
                 <template #default="{ row }">
+                  <el-button
+                    v-if="canDeploy"
+                    size="small"
+                    type="success"
+                    plain
+                    :icon="Position"
+                    :loading="deployingID === row.id"
+                    @click="handleDeployPackage(row)"
+                  >部署</el-button>
                   <el-button
                     v-if="canDownload"
                     size="small"
