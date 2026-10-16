@@ -228,7 +228,7 @@ export function getAssets() {
 }
 
 /**
- * 查项目 + 资产 + 路径 三层嵌套(给"apk/前端包管理"页左侧树用)
+ * 查项目 + 资产 + 路径 三层嵌套(给"前端包管理"页左侧树用)
  * GET /api/codeDeploy/projects-with-paths
  * @returns {Promise<{data: {list: Array<{id, code, name, description, sort, status, path_count, assets: Array<{id, name, address, platform, os, paths: Array<{id, name}>}>}>}}>}
  */
@@ -296,6 +296,40 @@ export function deleteAssetPath(pathId) {
 export function getPackageDownloadURL(id) {
   return request({
     url: `/api/codeDeploy/packages/${id}/download-url`,
+    method: 'get'
+  })
+}
+
+// =====================================================
+// 部署日志(2026-10-16 新增)
+//   - list:  分页 + 多维筛选
+//   - detail: 单条详情(含 JMS 远端输出 stderr 末 2000 字符)
+// =====================================================
+
+/**
+ * 列操作日志
+ * @param {{
+ *   event?: string,    // 事件类型
+ *   result?: number,   // 1=成功 0=失败
+ *   keyword?: string,  // 包名/用户名 LIKE 模糊匹配
+ *   start?: string,    // ISO 时间 '2026-10-01' 或 RFC3339
+ *   end?: string,      // 同 start
+ *   page?: number,
+ *   size?: number
+ * }} params
+ */
+export function getOperationLogs(params) {
+  return request({
+    url: '/api/codeDeploy/operation-logs',
+    method: 'get',
+    params
+  })
+}
+
+/** 单条日志详情 */
+export function getOperationLog(id) {
+  return request({
+    url: `/api/codeDeploy/operation-logs/${id}`,
     method: 'get'
   })
 }

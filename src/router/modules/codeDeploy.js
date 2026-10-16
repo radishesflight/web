@@ -3,7 +3,7 @@
  *
  * 包含:
  *   /codeDeploy/online         代码拉取控制台(假数据,后续对接后端)
- *   /codeDeploy/apkPackage     apk/前端包管理
+ *   /codeDeploy/apkPackage     前端包管理
  *   /codeDeploy/businessProjects 业务项目(资产)管理 - 列表/CRUD/同步 JMS
  *
  * 加新页面的步骤:
@@ -23,12 +23,18 @@ export default [
     path: '/codeDeploy/apkPackage',
     name: 'ApkPackage',
     component: () => import('@/views/codeDeploy/apkPackage/ApkPackage.vue'),
-    meta: { title: 'apk/前端包管理' },
+    meta: { title: '前端包管理' },
   },
   {
     path: '/codeDeploy/businessProjects',
     name: 'BusinessProjects',
     component: () => import('@/views/codeDeploy/businessProjects/BusinessProjects.vue'),
     meta: { title: '资产列表' },
+  },
+  {
+    path: '/codeDeploy/operationLog',
+    name: 'OperationLog',
+    component: () => import('@/views/codeDeploy/operationLog/OperationLog.vue'),
+    meta: { title: '部署日志' },
   },
 ]

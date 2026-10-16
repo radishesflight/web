@@ -1,5 +1,5 @@
 <!--
-  apk / 前端包管理
+  前端包管理(online/ApkPackage.vue 是死文件,实际页面在 apkPackage/ApkPackage.vue)
 
   布局:
     左侧: 树结构(业务项目 -> 端)
