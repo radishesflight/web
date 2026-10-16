@@ -1,27 +1,30 @@
 <!--
-  前端包管理 页面(2026-10-16 新增)
+  APK包管理 页面(2026-10-16)
 
   布局:左侧项目树(项目 → 资产 → 路径 三层),右侧详情(选中项目/资产显示元信息,
-  选中资产路径显示该路径下所有历史代码包 + 上传入口)。
+  选中资产路径显示该路径下所有历史安装包 + 上传入口)。
 
   接口:
    - GET  /api/codeDeploy/projects-with-paths  左侧树
    - GET  /api/codeDeploy/packages?asset_path_id=X  右侧包列表
    - POST /api/codeDeploy/packages  上传(multipart,asset_id + asset_path_id + file)
+        后端按 asset_path.type 做白名单:apk → .apk;ios → .ipa/.plist;web → .zip
+        安装包大小上限 500MB(web zip 仍 200MB)
    - DELETE /api/codeDeploy/packages/:id  删除
 
   权限:走 PermissionMiddleware,前端按钮用 hasRoute 决定显隐。
+
+  与前端包管理(ApkPackage)的区别:这里只展示 type=apk/ios 路径,
+  上传是单文件直传,不做 JSZip 打包,不部署。
 -->
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Refresh, UploadFilled, Promotion, Delete, Download } from '@element-plus/icons-vue'
-import JSZip from 'jszip'
 import { useUserStore } from '@/stores/user'
 import { getProjectsWithPaths, getPackages, uploadPackage, deletePackage, getPackageDownloadURL } from '@/api/codeDeploy'
 
 const userStore = useUserStore()
-const FOLDER_SIZE_LIMIT = 300 * 1024 * 1024
 
 // 状态
 const projectTree = ref([])
@@ -32,8 +35,29 @@ const selectedNode = ref(null)          // {kind: 'project'|'asset'|'path', data
 const packages = ref([])
 const loadingPackages = ref(false)
 const uploading = ref(false)
-const packing = ref(false)
-const packingProgress = ref(0)
+
+// 当前选中路径的类型(apk / ios),用于决定上传 accept + 按钮文案
+// 2026-10-16 改造:APK包管理 只走 apk/ios 单文件直传,不再做 JSZip 打包
+const currentPathType = computed(() => {
+  if (selectedNode.value && selectedNode.value.kind === 'path') {
+    return (selectedNode.value.data && selectedNode.value.data.type) || ''
+  }
+  return ''
+})
+// accept 列表(2026-10-16):按路径类型给浏览器筛文件
+const acceptStr = computed(() => {
+  if (currentPathType.value === 'apk') return '.apk,application/vnd.android.package-archive'
+  if (currentPathType.value === 'ios') return '.ipa,application/octet-stream,.plist,application/xml,text/xml'
+  return '*'
+})
+// 按钮文案:跟随类型动态切换
+const uploadBtnText = computed(() => {
+  if (currentPathType.value === 'apk') return '上传 APK'
+  if (currentPathType.value === 'ios') return '上传 iOS 包'
+  return '上传安装包'
+})
+// 安装包大小上限(2026-10-16):apk/ios 放宽到 500MB,与后端 maxInstallPackageSize 对齐
+const INSTALL_PACKAGE_SIZE_LIMIT = 500 * 1024 * 1024
 
 // 把 projectTree 转成 el-tree 结构(统一 children 字段,让 el-tree 能递归展开)
 //   project.children = [assets...]
@@ -158,19 +182,17 @@ function onNodeClick(data) {
   }
 }
 
-// 上传(web 选文件夹 → JSZip 打包 → POST)
-function syncWebkitDirectory() {
-  const input = fileInputRef.value
-  if (!input) return
-  input.setAttribute('webkitdirectory', '')
-  input.setAttribute('directory', '')
-  input.setAttribute('mozdirectory', '')
-  input.setAttribute('multiple', '')
-}
-
+// 上传(2026-10-16 改造):APK包管理 单文件直传
+//   apk 路径 → 选 .apk   (Android 安装包)
+//   ios 路径 → 选 .ipa/.plist (iOS 安装包 + OTA 清单)
+//   不再做 JSZip 打包;不带 webdirectory 属性
 function triggerFilePicker() {
   if (!selectedPathID.value) {
     ElMessage.warning('请先在左侧选择一个资产路径')
+    return
+  }
+  if (!currentPathType.value) {
+    ElMessage.warning('当前路径缺少类型信息,无法确定可上传文件')
     return
   }
   fileInputRef.value && fileInputRef.value.click()
@@ -180,52 +202,25 @@ async function onNativeFileChange(e) {
   const files = Array.from(e.target.files || [])
   if (fileInputRef.value) fileInputRef.value.value = ''
   if (files.length === 0) return
-
-  const total = files.reduce(function (s, f) { return s + (f.size || 0) }, 0)
-  if (total > FOLDER_SIZE_LIMIT) {
-    ElMessage.warning('文件夹总大小 ' + (total / 1024 / 1024).toFixed(1) + 'MB 超过 300MB 限制')
+  if (files.length > 1) {
+    ElMessage.warning('只允许上传 1 个安装包')
     return
   }
-  const empty = files.filter(function (f) { return f.size === 0 })
-  if (empty.length === files.length) {
-    ElMessage.warning('所选文件夹里所有文件都是 0 字节,无法上传')
+  const file = files[0]
+  if (file.size === 0) {
+    ElMessage.warning('文件为空,无法上传')
+    return
+  }
+  // 前端大小兜底(后端也会再校验一次)
+  if (file.size > INSTALL_PACKAGE_SIZE_LIMIT) {
+    ElMessage.warning(
+      '安装包大小 ' + (file.size / 1024 / 1024).toFixed(1) +
+      'MB 超过 ' + (INSTALL_PACKAGE_SIZE_LIMIT / 1024 / 1024) + 'MB 限制'
+    )
     return
   }
 
-  // 1) JSZip 整目录打包
-  packing.value = true
-  packingProgress.value = 0
-  let blob, folderName
-  try {
-    const zip = new JSZip()
-    const used = new Set()
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i]
-      let rel = f.webkitRelativePath || f.name || ('file_' + i)
-      let unique = rel
-      let n = 1
-      while (used.has(unique)) {
-        const dot = rel.lastIndexOf('.')
-        unique = dot > 0
-          ? rel.slice(0, dot) + '_' + n + rel.slice(dot)
-          : rel + '_' + n
-        n++
-      }
-      used.add(unique)
-      zip.file(unique, await f.arrayBuffer())
-      packingProgress.value = Math.round(((i + 1) / files.length) * 100)
-    }
-    blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
-    folderName = ((files[0].webkitRelativePath || '').split('/')[0]) || 'package'
-  } catch (err) {
-    console.error('[ApkPackage] pack failed:', err)
-    ElMessage.error('打包失败: ' + (err && err.message || err))
-    packing.value = false
-    return
-  }
-  packing.value = false
-
-  // 2) 上传
+  // 找所属资产(用于填 asset_id)
   const pathNode = selectedNode.value.data
   const assetID = pathNode._asset_id || pathNode.asset_id
   const assetNode = findAssetById(assetID)
@@ -233,19 +228,24 @@ async function onNativeFileChange(e) {
     ElMessage.error('内部错误:找不到所属资产')
     return
   }
+
+  // name 优先用 file.name(去掉扩展名),回退到 pathNode.name
+  const dot = file.name.lastIndexOf('.')
+  const baseName = dot > 0 ? file.name.slice(0, dot) : file.name
+
   uploading.value = true
   try {
     const fd = new FormData()
-    fd.append('file', new File([blob], folderName + '.zip', { type: 'application/zip' }))
+    fd.append('file', file)
     fd.append('asset_id', String(assetNode.id))
     fd.append('asset_path_id', String(pathNode.id))
-    fd.append('name', folderName)
+    fd.append('name', baseName || pathNode.name || 'package')
     fd.append('note', '')
     await uploadPackage(fd)
-    ElMessage.success('上传成功: ' + folderName + '.zip')
+    ElMessage.success('上传成功: ' + file.name)
     loadPackagesForPath()
   } catch (err) {
-    console.error('[ApkPackage] upload failed:', err)
+    console.error('[ApkManagement] upload failed:', err)
     ElMessage.error('上传失败: ' + ((err && (err.msg || err.message)) || '网络异常'))
   } finally {
     uploading.value = false
@@ -332,7 +332,6 @@ void clearSelection  // 保留供以后需要清空选择时用(目前未绑定�
 
 onMounted(function () {
   loadTree()
-  nextTick(function () { syncWebkitDirectory() })
 })
 </script>
 
@@ -368,6 +367,7 @@ onMounted(function () {
           <input
             ref="fileInputRef"
             type="file"
+            :accept="acceptStr"
             style="display: none"
             @change="onNativeFileChange"
           />
@@ -384,9 +384,9 @@ onMounted(function () {
                 size="small"
                 type="primary"
                 :icon="UploadFilled"
-                :loading="uploading || packing"
+                :loading="uploading"
                 @click="triggerFilePicker"
-              >上传代码包</el-button>
+              >{{ uploadBtnText }}</el-button>
             </div>
           </template>
 
@@ -434,15 +434,9 @@ onMounted(function () {
               <span class="path-name">{{ selectedNode.data.name }}</span>
             </div>
 
-            <div v-if="uploading || packing" class="upload-status">
-              <template v-if="packing">
-                <el-progress :percentage="packingProgress" :stroke-width="14" style="flex:1; max-width: 320px;" />
-                <span style="margin-left: 8px;">正在打包... {{ packingProgress }}%</span>
-              </template>
-              <template v-else>
-                <el-icon class="is-loading"><Promotion /></el-icon>
-                正在上传到对象存储...
-              </template>
+            <div v-if="uploading" class="upload-status">
+              <el-icon class="is-loading"><Promotion /></el-icon>
+              正在上传到对象存储...
             </div>
 
             <el-table
@@ -451,7 +445,7 @@ onMounted(function () {
               border
               stripe
               size="small"
-              empty-text="该路径下还没有代码包,点击上方「上传代码包」按钮"
+              empty-text="该路径下还没有安装包,点击上方「上传 APK / iOS 包」按钮"
               class="package-table"
             >
               <el-table-column prop="id" label="ID" width="60" />
