@@ -367,10 +367,22 @@ async function handlePull() {
     lines.push(`代码包: ${pkg.full_name || pkg.name}`)
     lines.push(`目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${proj.path}`)
     lines.push(`错误: ${detail}`)
-    // 如果后端带了 material(strip 末段),也展示出来,辅助排错
+    // 后端响应 data.summary.failures 里是 JMS 抓的 stderr(真实远端报错),
+    // 比如"zip: command not found" / "unzip: cannot find..." / "rsync: file has vanished"
+    // 比 material(命令回显)更有用,优先展示
+    if (e?.data?.summary?.failures) {
+      const fails = e.data.summary.failures
+      const assetName = selectedAsset.value.name
+      // 优先按资产名匹配,fallback 拿任意一个
+      const failText = fails[assetName] || Object.values(fails)[0]
+      if (failText) {
+        lines.push('--- 远端真实 stderr(JMS 抓取) ---')
+        lines.push(String(failText).trim().split('\n').slice(-40).join('\n'))
+      }
+    }
     if (e?.data?.material) {
-      lines.push('--- 远端 stdout(末段) ---')
-      lines.push(e.data.material.trim().split('\n').slice(-30).join('\n'))
+      lines.push('--- 远端命令(回显) ---')
+      lines.push(e.data.material.trim().split('\n').slice(-15).join('\n'))
     }
     if (e?.data?.err) {
       lines.push(`后端 err: ${e.data.err}`)
