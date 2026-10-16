@@ -105,8 +105,17 @@ service.interceptors.response.use(
     }
 
     // 其他业务错误:弹 toast + reject(让 view 拿 catch 处理)
+    // 在 Error 上挂自定义属性,view 可以用 e.code / e.data / e.msg 取值
+    //  - e.message:兼容 ElMessage 弹错(原 message 行为不变)
+    //  - e.code   :业务码(例 5012 部署失败)
+    //  - e.data   :业务码对应的 data(例 部署失败时的 stdout/material)
+    //  - e.msg    :原始 msg(冗余,有些老 view 直接读 .msg)
+    const bizErr = new Error(res.msg || '请求失败')
+    bizErr.code = res.code
+    bizErr.msg = res.msg
+    if (res.data !== undefined) bizErr.data = res.data
     ElMessage.error(res.msg || '请求失败')
-    return Promise.reject(new Error(res.msg || '请求失败'))
+    return Promise.reject(bizErr)
   },
 
   // ============== HTTP 层错误(网络/超时) ==============

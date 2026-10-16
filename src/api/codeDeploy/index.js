@@ -152,23 +152,29 @@ export function getPackage(id) {
  *   - note           可选
  * @returns {Promise<{data: {id, full_name, file_url, version, ...}}>}
  */
+// 上传 5 分钟超时(300MB 文件:浏览器读取 + multipart + 后端推 OSS 几条链路串起来,远不止 10s)
+const UPLOAD_TIMEOUT_MS = 5 * 60 * 1000
+
 export function uploadPackage(formData) {
   return request({
     url: '/api/codeDeploy/packages',
     method: 'post',
-    data: formData
+    data: formData,
+    timeout: UPLOAD_TIMEOUT_MS
   })
 }
 
 /**
- * 触发部署
- * @param {number} id
- * @returns {Promise<{data: {success, time_cost?, material?, err?, full_name}}>}
+ * 触发部署(JMS 跑 cd+curl+unzip,后端内部轮询直到终态)
+ * 5 分钟超时:100MB 包下载 + 解压需要时间
+ * @param {number} id 代码包 id
+ * @returns {Promise<{data: {success, package_id, full_name, asset_id, asset_name, deploy_path, jms_id, command, is_finished, is_success, status, time_cost, material?, summary?, err?}}>}
  */
 export function pullPackage(id) {
   return request({
     url: `/api/codeDeploy/packages/${id}/pull`,
-    method: 'post'
+    method: 'post',
+    timeout: 5 * 60 * 1000
   })
 }
 

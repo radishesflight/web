@@ -14,7 +14,7 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, Tools, Refresh, Promotion, UploadFilled } from '@element-plus/icons-vue'
 import JSZip from 'jszip'
-import { getAssets, getAssetPaths } from '@/api/codeDeploy'
+import { getAssets, getAssetPaths, uploadPackage, pullPackage } from '@/api/codeDeploy'
 
 // 前端文件夹总大小限制(与 ApkPackage.vue 一致)
 const FOLDER_SIZE_LIMIT = 300 * 1024 * 1024
@@ -30,12 +30,15 @@ const filter = ref('')
 const selectedAsset = ref(null) // {id, name, address, project_id, ...}
 const projectOptions = ref([])
 const loadingProjects = ref(false)
-const selectedProject = ref('')
+const selectedProject = ref(null) // {id, name, path} — 第 2 步选中的资产路径
 // 第 3 步:上传代码包(文件夹模式,参照 ApkPackage.vue)
-const uploadedPackage = ref(null)   // {name, fileCount, sizeMB, zipFile}
+//   选文件夹 → JSZip 整目录打包 → 上传到对象存储 → 后端落库 deploy_targets
+//   拉取时再 POST /api/codeDeploy/packages/:id/pull(下一步做)
+const uploadedPackage = ref(null)   // 后端返回的 package 实体:{id, full_name, file_url, size, name, asset_id, asset_path_id, ...}
 const selectedFiles = ref([])       // 文件夹模式的文件列表
 const packing = ref(false)          // JSZip 打包中
 const packingProgress = ref(0)      // 打包进度 0~100
+const uploading = ref(false)        // POST /api/codeDeploy/packages 上传中
 const fileInputRef = ref(null)      // native input 引用,手动设 webkitdirectory
 const pulling = ref(false)
 const result = ref(null) // {type, text}
@@ -128,7 +131,7 @@ async function loadAssets() {
 function selectAsset(asset) {
   selectedAsset.value = asset
   // 重置项目 + 已上传包
-  selectedProject.value = ''
+  selectedProject.value = null
   uploadedPackage.value = null
   selectedFiles.value = []
   result.value = null
@@ -137,7 +140,7 @@ function selectAsset(asset) {
 
 function reselectAsset() {
   selectedAsset.value = null
-  selectedProject.value = ''
+  selectedProject.value = null
   uploadedPackage.value = null
   selectedFiles.value = []
   projectOptions.value = []
@@ -153,7 +156,7 @@ async function loadProjects(asset) {
   try {
     const { data } = await getAssetPaths(asset.id)
     const paths = data?.list || []
-    // 塑成下拉用的 {name, path}:name 用于下拉展示(可能为空,fallback 到 path)
+    // 塑成下拉用的 {id, name, path}:id 给上传接口用,name 用于下拉展示(可空,fallback 到 path)
     projectOptions.value = paths.map(p => ({
       id: p.id,
       name: p.name || p.path,
@@ -169,8 +172,9 @@ async function loadProjects(asset) {
   }
 }
 
-function onProjectChange(path) {
-  if (!path) {
+function onProjectChange(option) {
+  // option = {id, name, path} 或 null
+  if (!option) {
     uploadedPackage.value = null
     selectedFiles.value = []
     return
@@ -227,20 +231,24 @@ function onNativeFileChange(e) {
 
   selectedFiles.value = files
   uploadedPackage.value = null
-  packSelectedFolder()
+  // 打包完成后自动接上"上传到对象存储"——无需手动点按钮
+  packSelectedFolder().then(() => {
+    if (localZip.value) handleUpload()
+  })
 }
 
 function clearUploaded() {
   selectedFiles.value = []
   uploadedPackage.value = null
+  localZip.value = null
   packing.value = false
   packingProgress.value = 0
   if (fileInputRef.value) fileInputRef.value.value = ''
 }
 
-// 文件夹 → JSZip 打包成 zip File
-// 关键:提前 await file.arrayBuffer() 把 file 转成内存 ArrayBuffer,
-//       不依赖原 file 引用(input.value 清空后 file 引用会失效)
+// 暂存"本地 zip"(JSZip 打包产物,等用户点"上传"按钮再 POST 出去)
+const localZip = ref(null)          // {folderName, fileCount, sizeMB, blob, fileName}
+
 async function packSelectedFolder() {
   if (selectedFiles.value.length === 0) return
   packing.value = true
@@ -270,47 +278,111 @@ async function packSelectedFolder() {
     }
     const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
     const folderName = (selectedFiles.value[0].webkitRelativePath || '').split('/')[0] || 'package'
-    uploadedPackage.value = {
-      name: `${folderName}.zip`,
+    localZip.value = {
+      folderName,
       fileCount: total,
       sizeMB: (blob.size / 1024 / 1024).toFixed(2),
-      zipFile: new File([blob], `${folderName}.zip`, { type: 'application/zip' })
+      blob,
+      fileName: `${folderName}.zip`
     }
   } finally {
     packing.value = false
   }
 }
 
+// 把 localZip 自动推到后端(后端推到对象存储 + 落库 deploy_targets)
+// 选完文件夹后由 onNativeFileChange 末尾自动调,无需手动按钮
+async function handleUpload() {
+  if (!localZip.value) {
+    ElMessage.warning('请先选择要上传的文件夹')
+    return
+  }
+  if (!selectedProject.value || !selectedAsset.value) {
+    ElMessage.warning('请先选资产和项目路径')
+    return
+  }
+  uploading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', new File([localZip.value.blob], localZip.value.fileName, { type: 'application/zip' }))
+    fd.append('asset_id', String(selectedAsset.value.id))
+    // asset_path_id:有选中路径就传,没选传 0
+    fd.append('asset_path_id', String(selectedProject.value.id || 0))
+    fd.append('name', localZip.value.folderName)
+    fd.append('note', '')
+
+    const { data: pkg } = await uploadPackage(fd)
+    uploadedPackage.value = pkg
+    ElMessage.success(`上传成功: ${pkg.full_name || pkg.name}`)
+  } catch (e) {
+    console.error('[handleUpload] failed:', e)
+    const detail = e?.msg || e?.message || '网络异常'
+    ElMessage.error(`上传失败: ${detail}`)
+    // 失败时把已打包的 localZip 清掉,回到"未选"状态,允许重新选目录再自动重传
+    localZip.value = null
+    selectedFiles.value = []
+  } finally {
+    uploading.value = false
+  }
+}
+
 async function handlePull() {
   if (!canPull.value) return
   const id = selectedAsset.value.id
-  const path = selectedProject.value
+  const proj = selectedProject.value
   const pkg = uploadedPackage.value
   pulling.value = true
   result.value = {
     type: 'info',
     title: '执行中',
-    text: `⏳ 正在部署代码包 ${pkg.name} (${pkg.sizeMB}MB · ${pkg.fileCount} 个文件)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n(在资产上跑大概 3-5 秒,请稍候...)`
+    text: `⏳ 正在部署代码包 ${pkg.full_name || pkg.name} (${(pkg.size / 1024 / 1024).toFixed(2)}MB)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${proj.path}\n(后端正在调用 JumpServer 拉起 ad-hoc 任务,内部轮询直到部署完成,可能 1-3 分钟)`
   }
-  // 模拟接口调用,80% 成功 20% 失败
-  await new Promise(res => setTimeout(res, 1500 + Math.random() * 1500))
-  const ok = Math.random() > 0.2
-  if (ok) {
-    const timeCost = (2.5 + Math.random() * 2).toFixed(2)
+  try {
+    // 真实调用:后端生成 OSS 签名 URL + 调 JMS ad-hoc 任务 + 内部轮询到终态
+    // 5 分钟 axios timeout,跟 uploadPackage 一致
+    const { data: res } = await pullPackage(pkg.id)
+    const timeCost = (res.time_cost || 0).toFixed(2)
+    const lines = []
+    lines.push(`✓ 部署成功`)
+    lines.push(`代码包: ${res.full_name || pkg.full_name}`)
+    lines.push(`目标: ${res.asset_name || selectedAsset.value.name} @ ${res.deploy_path || proj.path}`)
+    lines.push(`耗时: ${timeCost}s(JMS 任务端到端)`)
+    if (res.status) lines.push(`JMS 状态: ${res.status}`)
+    if (res.material) {
+      lines.push('--- 远端 stdout ---')
+      lines.push(res.material.trim())
+    }
     result.value = {
       type: 'success',
       title: '拉取成功',
-      text: `✓ 部署成功\n代码包: ${pkg.name} (${pkg.sizeMB}MB)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n耗时: ${timeCost}s`
+      text: lines.join('\n')
     }
     pushRecent(id)
-  } else {
+  } catch (e) {
+    // 部署失败时,后端会带 data(有 material/err),但 axios 拦截器默认只 reject error 对象
+    // 实际拿不到 res,得在 catch 里根据 e 推断
+    const detail = e?.msg || e?.message || '网络异常'
+    const lines = []
+    lines.push(`✗ 部署失败`)
+    lines.push(`代码包: ${pkg.full_name || pkg.name}`)
+    lines.push(`目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${proj.path}`)
+    lines.push(`错误: ${detail}`)
+    // 如果后端带了 material(strip 末段),也展示出来,辅助排错
+    if (e?.data?.material) {
+      lines.push('--- 远端 stdout(末段) ---')
+      lines.push(e.data.material.trim().split('\n').slice(-30).join('\n'))
+    }
+    if (e?.data?.err) {
+      lines.push(`后端 err: ${e.data.err}`)
+    }
     result.value = {
       type: 'error',
       title: '拉取失败',
-      text: `✗ 部署失败\n代码包: ${pkg.name} (${pkg.sizeMB}MB)\n目标: ${selectedAsset.value.name} (${selectedAsset.value.address}) @ ${path}\n错误: 部署失败: target host unreachable`
+      text: lines.join('\n')
     }
+  } finally {
+    pulling.value = false
   }
-  pulling.value = false
 }
 
 onMounted(() => {
@@ -404,6 +476,7 @@ onMounted(() => {
       </div>
       <el-select
         v-model="selectedProject"
+        value-key="id"
         :placeholder="projectPlaceholder"
         :disabled="!selectedAsset || loadingProjects"
         :loading="loadingProjects"
@@ -413,9 +486,9 @@ onMounted(() => {
       >
         <el-option
           v-for="p in projectOptions"
-          :key="p.path"
+          :key="p.id"
           :label="`${p.name}  (${p.path})`"
-          :value="p.path"
+          :value="p"
         />
         <el-option
           v-if="selectedAsset && !loadingProjects && projectOptions.length === 0"
@@ -430,7 +503,8 @@ onMounted(() => {
       <div class="field-label">
         <span class="num">3.</span>
         <span>上传代码包</span>
-        <span v-if="uploadedPackage" class="count-text">已选 {{ uploadedPackage.fileCount }} 个文件</span>
+        <span v-if="localZip && !uploadedPackage" class="count-text">已打包 {{ localZip.fileCount }} 个文件</span>
+        <span v-if="uploadedPackage" class="count-text">已上传 1 个</span>
       </div>
       <div
         class="upload-drag"
@@ -455,15 +529,24 @@ onMounted(() => {
             <span style="margin-left: 8px;">正在打包... {{ packingProgress }}%</span>
           </template>
           <template v-else-if="uploadedPackage">
-            已选: <strong>{{ uploadedPackage.name }}</strong>
-            · {{ uploadedPackage.fileCount }} 个文件
-            · {{ uploadedPackage.sizeMB }}MB
+            ✓ 已上传到对象存储: <strong>{{ uploadedPackage.full_name || uploadedPackage.name }}</strong>
+            · {{ (uploadedPackage.size / 1024 / 1024).toFixed(2) }}MB
+            <span class="reselect-hint">(点击可重新选择)</span>
+          </template>
+          <template v-else-if="localZip">
+            已打包: <strong>{{ localZip.fileName }}</strong>
+            · {{ localZip.fileCount }} 个文件
+            · {{ localZip.sizeMB }}MB
             <span class="reselect-hint">(点击可重新选择)</span>
           </template>
           <template v-else>文件夹总大小不超过 300MB{{ selectedProject ? '' : ',请先选择项目' }}</template>
         </div>
       </div>
-      <div v-if="uploadedPackage && !packing" style="margin-top: 8px;">
+      <div v-if="uploading" style="margin-top: 8px; color: var(--el-color-primary); font-size: 12px;">
+        <el-icon class="is-loading"><Promotion /></el-icon>
+        正在上传到对象存储...
+      </div>
+      <div v-else-if="uploadedPackage && !packing" style="margin-top: 8px;">
         <el-button size="small" plain @click="clearUploaded" :icon="Refresh">重新选择</el-button>
       </div>
 

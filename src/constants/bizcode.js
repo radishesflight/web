@@ -99,6 +99,10 @@ export const BizCode = Object.freeze({
   ProjectSyncNoConfig: 5009,
   /** JMS 响应解析失败(返回了非预期格式) */
   ProjectSyncParse: 5010,
+  /** 代码包未配置部署目标(没 deploy_target) */
+  PackageNoDeployTarget: 5011,
+  /** 代码包部署失败(JMS 任务执行失败或资产不可达) */
+  PackagePullFail: 5012,
 
   // ===== 9xxx 通用 =====
   /** 未分类失败 */
