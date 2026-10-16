@@ -118,9 +118,10 @@ export function deleteProject(id) {
 // =====================================================
 
 /**
- * 列代码包(按 project_id + endpoint_id 过滤)
- * @param {{project_id?: number, endpoint_id?: number}} params
- * @returns {Promise<{data: {list: Array<{id, project_id, endpoint_id, name, version, full_name, ext, size, file_url, uploader_id, build_time, note, status, created_at}>}}>}
+ * 列代码包(按 project_id + asset_id + asset_path_id 过滤)
+ * 2026-10-16 改造:用 asset_id/asset_path_id 替代 endpoint_id
+ * @param {{project_id?: number, asset_id?: number, asset_path_id?: number}} params
+ * @returns {Promise<{data: {list: Array<{id, project_id, asset_id, asset_path_id, name, version, full_name, ext, size, file_url, uploader_id, build_time, note, status, created_at}>}}>}
  */
 export function getPackages(params) {
   return request({
@@ -222,6 +223,18 @@ export function syncAll() {
 export function getAssets() {
   return request({
     url: '/api/codeDeploy/assets',
+    method: 'get'
+  })
+}
+
+/**
+ * 查项目 + 资产 + 路径 三层嵌套(给"apk/前端包管理"页左侧树用)
+ * GET /api/codeDeploy/projects-with-paths
+ * @returns {Promise<{data: {list: Array<{id, code, name, description, sort, status, path_count, assets: Array<{id, name, address, platform, os, paths: Array<{id, name}>}>}>}}>}
+ */
+export function getProjectsWithPaths() {
+  return request({
+    url: '/api/codeDeploy/projects-with-paths',
     method: 'get'
   })
 }

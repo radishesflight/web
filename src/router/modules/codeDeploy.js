@@ -22,7 +22,7 @@ export default [
   {
     path: '/codeDeploy/apkPackage',
     name: 'ApkPackage',
-    component: () => import('@/views/codeDeploy/online/ApkPackage.vue'),
+    component: () => import('@/views/codeDeploy/apkPackage/ApkPackage.vue'),
     meta: { title: 'apk/前端包管理' },
   },
   {
