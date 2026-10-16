@@ -17,7 +17,7 @@ export default [
     path: '/codeDeploy/online',
     name: 'Online',
     component: () => import('@/views/codeDeploy/online/Online.vue'),
-    meta: { title: '代码部署' },
+    meta: { title: '后端API部署' },
   },
   {
     path: '/codeDeploy/apkPackage',

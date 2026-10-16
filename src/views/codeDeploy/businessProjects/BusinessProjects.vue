@@ -44,7 +44,13 @@ const pathsLoading = ref({})
 // 添加路径弹窗
 const pathDialogVisible = ref(false)
 const pathDialogAsset = ref(null) // 当前操作的 asset
-const pathForm = ref({ name: '', path: '', sort: 0 })
+// type 选项(2026-10-16 新增):区分前端/后端/其他,后端 api/web/other,前端多显示"其他"
+const PATH_TYPE_OPTIONS = [
+  { value: 'api', label: 'api' },
+  { value: 'web', label: 'web' },
+  { value: 'other', label: '其他' }
+]
+const pathForm = ref({ name: '', path: '', type: 'web', sort: 0 })
 const pathSubmitting = ref(false)
 
 const fetchData = async () => {
@@ -138,6 +144,7 @@ const submitPath = async () => {
     await addAssetPath(pathDialogAsset.value.id, {
       name: pathForm.value.name,
       path: pathForm.value.path,
+      type: pathForm.value.type || 'other',
       sort: pathForm.value.sort || 0
     })
     ElMessage.success('路径已添加')
@@ -271,6 +278,14 @@ onMounted(fetchData)
                   <el-table-column prop="id" label="ID" width="60" />
                   <el-table-column prop="name" label="路径名称" min-width="160" />
                   <el-table-column prop="path" label="路径" min-width="260" show-overflow-tooltip />
+                  <el-table-column prop="type" label="类型" width="80">
+                    <template #default="{ row: p }">
+                      <el-tag v-if="p.type === 'api'" type="primary" size="small">api</el-tag>
+                      <el-tag v-else-if="p.type === 'web'" type="success" size="small">web</el-tag>
+                      <el-tag v-else-if="p.type === 'other'" size="small">其他</el-tag>
+                      <span v-else class="type-empty">-</span>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="sort" label="排序" width="80" />
                   <el-table-column label="操作" width="100" fixed="right">
                     <template #default="{ row: p }">
@@ -304,6 +319,11 @@ onMounted(fetchData)
         </el-form-item>
         <el-form-item label="路径" required>
           <el-input v-model="pathForm.path" placeholder="例:/home/www/web" />
+        </el-form-item>
+        <el-form-item label="类型">
+          <el-select v-model="pathForm.type" style="width: 100%;">
+            <el-option v-for="o in PATH_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="pathForm.sort" :min="0" :max="9999" />

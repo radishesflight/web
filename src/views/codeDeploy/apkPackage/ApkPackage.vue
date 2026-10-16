@@ -39,6 +39,9 @@ const packingProgress = ref(0)
 //   project.children = [assets...]
 //   asset.children   = [paths...] (path 节点带 _isPath + _asset_id 标记)
 //   path             = 叶子
+// 路径类型过滤(2026-10-16):ApkPackage 只展示 type='web' 路径
+//   type 字段:string enum "api" / "web" / "other",DB default 'web'
+//   老的 NULL 数据不显示(用户确认"老的不考虑")
 const treeData = computed(() => {
   let projects = projectTree.value
   if (filterText.value.trim()) {
@@ -64,7 +67,10 @@ const treeData = computed(() => {
       children: (p.assets || []).map(function (a) {
         return {
           ...a,
-          children: (a.paths || []).map(function (pa) {
+          // 只显示 type='web' 的路径,老的 NULL 不显示
+          children: (a.paths || []).filter(function (pa) {
+            return pa.type === 'web'
+          }).map(function (pa) {
             return Object.assign({}, pa, { _isPath: true, _asset_id: a.id })
           })
         }

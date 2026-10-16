@@ -180,6 +180,23 @@ export function pullPackage(id) {
 }
 
 /**
+ * 后端 API 部署(走 git reset,不是 OSS 包)
+ * 5 分钟超时:git fetch + reset + composer install 一次完成
+ * **branch 不传**:服务端自己在服务器上跑 git symbolic-ref --short HEAD 拿当前分支
+ * @param {number} assetId 业务资产 id
+ * @param {number} pathId 部署路径 id(必传,后端校验 type=api 且 asset_id 匹配)
+ * @returns {Promise<{data: {success, asset_id, asset_name, path_id, path_name, deploy_path, branch, jms_output, summary?, time_cost, err?}}>}
+ */
+export function gitDeploy(assetId, pathId) {
+  return request({
+    url: `/api/codeDeploy/assets/${assetId}/git-deploy`,
+    method: 'post',
+    data: { path_id: pathId },
+    timeout: 5 * 60 * 1000
+  })
+}
+
+/**
  * 同步业务项目(从 JumpServer 拉节点树,增量 upsert)
  * POST /api/codeDeploy/projects/sync
  * @returns {Promise<{data: {added, updated, removed, total_jms, total_local}}>}
@@ -256,10 +273,11 @@ export function getProjectAssets(projectId) {
  * 查某资产下所有路径
  * GET /api/codeDeploy/assets/:id/paths
  */
-export function getAssetPaths(assetId) {
+export function getAssetPaths(assetId, type) {
   return request({
     url: `/api/codeDeploy/assets/${assetId}/paths`,
-    method: 'get'
+    method: 'get',
+    params: type ? { type: type } : {}
   })
 }
 
