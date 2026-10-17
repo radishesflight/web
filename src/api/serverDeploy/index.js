@@ -7,11 +7,8 @@
  *   GET    /api/serverDeploy/images/sync/status                             同步状态(轮询)
  *   GET    /api/serverDeploy/regions                                       已同步的 region 字典(本地 DB)
  *
- * 操作用接口(实时调阿里云):
- *   POST   /api/serverDeploy/imageList/copy             跨地域复制
- *   POST   /api/serverDeploy/imageList/share            共享
- *   DELETE /api/serverDeploy/imageList/share            撤销共享
- *   GET    /api/serverDeploy/imageList/share/:region/:imageId  查已共享
+ * 注:跨地域复制/共享/撤销实时接口(POST /imageList/copy、POST/DELETE /imageList/share)
+ *   在 2026-10-17 DB 化重构中未接通,前端按钮已下线,等需要时再加回。
  *
  * 字段约定(后端 GORM 用 snake_case):
  *   image_id / image_name / image_type(Self|Others) / image_owner_alias
@@ -38,27 +35,4 @@ export function getSyncStatus() {
 // 已同步的 region 字典
 export function listRegions() {
   return request({ url: '/api/serverDeploy/regions', method: 'get' })
-}
-
-// 跨地域复制(2026-10-17 保留)
-export function copyImage(data) {
-  return request({ url: '/api/serverDeploy/imageList/copy', method: 'post', data })
-}
-
-// 共享
-export function shareImage(data) {
-  return request({ url: '/api/serverDeploy/imageList/share', method: 'post', data })
-}
-
-// 撤销共享
-export function unshareImage(data) {
-  return request({ url: '/api/serverDeploy/imageList/share', method: 'delete', data })
-}
-
-// 查已共享
-export function listSharedAccounts(region, imageId) {
-  return request({
-    url: `/api/serverDeploy/imageList/share/${encodeURIComponent(region)}/${encodeURIComponent(imageId)}`,
-    method: 'get'
-  })
 }

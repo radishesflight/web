@@ -98,21 +98,24 @@
             <el-tag :type="statusTag(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="snapshot_at" label="同步时间" width="170" />
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column prop="image_created_at" label="镜像创建时间" width="170">
+          <template #default="{ row }">
+            <span>{{ formatAliyunTime(row.image_created_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="snapshot_at" label="同步时间" width="170">
+          <template #default="{ row }">
+            <span>{{ formatAliyunTime(row.snapshot_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button
               size="small"
               type="primary"
               link
-              @click="openCopyDialog(row)"
-            >复制到其他 region</el-button>
-            <el-button
-              size="small"
-              type="success"
-              link
-              @click="openShareDialog(row)"
-            >共享</el-button>
+              disabled
+            >复制/共享(暂未接通)</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -129,79 +132,18 @@
         />
       </div>
     </el-card>
-
-    <!-- 复制对话框 -->
-    <el-dialog v-model="copyDialog.visible" title="跨地域复制镜像" width="480px">
-      <el-form :model="copyDialog.form" label-width="100px">
-        <el-form-item label="源镜像">
-          <span>{{ copyDialog.source?.image_name }} ({{ copyDialog.source?.image_id }})</span>
-        </el-form-item>
-        <el-form-item label="源 region">
-          <span>{{ copyDialog.source?.region_id }}</span>
-        </el-form-item>
-        <el-form-item label="目标 region" required>
-          <el-select v-model="copyDialog.form.destRegion" filterable placeholder="选择目标 region" style="width: 100%;">
-            <el-option
-              v-for="r in regions.filter(x => x.RegionId !== copyDialog.source?.region_id)"
-              :key="r.RegionId"
-              :label="r.RegionId"
-              :value="r.RegionId"
-            />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="copyDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="copyDialog.loading" @click="confirmCopy">确认复制</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 共享对话框 -->
-    <el-dialog v-model="shareDialog.visible" title="共享镜像" width="520px">
-      <el-form :model="shareDialog.form" label-width="100px">
-        <el-form-item label="镜像">
-          <span>{{ shareDialog.source?.image_name }} ({{ shareDialog.source?.region_id }})</span>
-        </el-form-item>
-        <el-form-item label="对方账号 UID" required>
-          <el-input
-            v-model="shareDialog.form.targetUIDs"
-            placeholder="例:12345678901234567890 (12-19 位数字)"
-            clearable
-          />
-          <div style="font-size: 12px; color: #909399; margin-top: 4px;">
-            阿里云账号 UID(账号中心 → 账号管理 → 账号 ID)
-          </div>
-        </el-form-item>
-        <el-form-item v-if="shareDialog.existing.length > 0" label="已共享给">
-          <el-tag
-            v-for="uid in shareDialog.existing"
-            :key="uid"
-            closable
-            style="margin-right: 6px;"
-            @close="unshareOne(uid)"
-          >{{ uid }}</el-tag>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="shareDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="shareDialog.loading" @click="confirmShare">共享</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import {
   listRegions,
   listImages,
   syncImages,
-  copyImage,
-  shareImage,
-  listSharedAccounts,
-  unshareImage
+  getSyncStatus
 } from '@/api/serverDeploy'
 
 const regions = ref([])
@@ -241,6 +183,15 @@ function formatTime(unix) {
   return new Date(unix * 1000).toLocaleString('zh-CN')
 }
 
+// 阿里云时间字段是 ISO/RFC3339 字符串,前端 new Date 解析后用本地时区展示
+// 容错:解析失败时回退原字符串
+function formatAliyunTime(s) {
+  if (!s) return ''
+  const d = new Date(s)
+  if (isNaN(d.getTime())) return s
+  return d.toLocaleString('zh-CN', { hour12: false })
+}
+
 async function loadRegions() {
   try {
     const r = await listRegions()
@@ -274,7 +225,9 @@ async function loadImages() {
 
 async function loadSyncStatus() {
   try {
-    const r = await import('@/api/serverDeploy').then(m => m.getSyncStatus())
+    // 直接调用函数(旧写法 .then(m => m.getSyncStatus()) 拿到的是 Promise 对象本身,
+    //   后边 r.data 永远是 undefined;修 2026-10-17 清理审计)
+    const r = await getSyncStatus()
     Object.assign(syncStatus, r.data || {})
     if (syncStatus.last_count > 0) hasData.value = true
   } catch (e) {
@@ -305,113 +258,6 @@ async function onSync() {
     ElMessage.error('同步失败: ' + ((e && (e.msg || e.message)) || '网络异常'))
   } finally {
     syncing.value = false
-  }
-}
-
-// 复制对话框
-const copyDialog = reactive({
-  visible: false,
-  loading: false,
-  source: null,
-  form: { destRegion: '' }
-})
-
-function openCopyDialog(row) {
-  copyDialog.source = row
-  copyDialog.form.destRegion = ''
-  copyDialog.visible = true
-}
-
-async function confirmCopy() {
-  if (!copyDialog.form.destRegion) {
-    ElMessage.warning('请选择目标 region')
-    return
-  }
-  copyDialog.loading = true
-  try {
-    const r = await copyImage({
-      source_region: copyDialog.source.region_id,
-      image_id: copyDialog.source.image_id,
-      dest_region: copyDialog.form.destRegion
-    })
-    ElMessage.success(`复制任务已发起,目标镜像 ID: ${r.data.new_image_id || '(处理中)'}`)
-    copyDialog.visible = false
-  } catch (e) {
-    ElMessage.error('复制失败: ' + ((e && (e.msg || e.message)) || '网络异常'))
-  } finally {
-    copyDialog.loading = false
-  }
-}
-
-// 共享对话框
-const shareDialog = reactive({
-  visible: false,
-  loading: false,
-  source: null,
-  form: { targetUIDs: '' },
-  existing: []
-})
-
-async function openShareDialog(row) {
-  shareDialog.source = row
-  shareDialog.form.targetUIDs = ''
-  shareDialog.existing = []
-  shareDialog.visible = true
-  try {
-    const r = await listSharedAccounts(row.region_id, row.image_id)
-    shareDialog.existing = (r.data && r.data.uids) || []
-  } catch (e) {
-    ElMessage.warning('加载已共享列表失败: ' + ((e && (e.msg || e.message)) || '网络异常'))
-  }
-}
-
-async function confirmShare() {
-  const uid = shareDialog.form.targetUIDs.trim()
-  if (!uid) {
-    ElMessage.warning('请输入对方账号 UID')
-    return
-  }
-  if (!/^\d{12,19}$/.test(uid)) {
-    ElMessage.warning('UID 格式不对(应该是 12-19 位纯数字)')
-    return
-  }
-  if (shareDialog.existing.includes(uid)) {
-    ElMessage.warning('该账号已经共享过了')
-    return
-  }
-  shareDialog.loading = true
-  try {
-    await shareImage({
-      region: shareDialog.source.region_id,
-      image_id: shareDialog.source.image_id,
-      target_uids: [uid]
-    })
-    ElMessage.success(`已共享给 ${uid}`)
-    shareDialog.existing.push(uid)
-    shareDialog.form.targetUIDs = ''
-  } catch (e) {
-    ElMessage.error('共享失败: ' + ((e && (e.msg || e.message)) || '网络异常'))
-  } finally {
-    shareDialog.loading = false
-  }
-}
-
-async function unshareOne(uid) {
-  try {
-    await ElMessageBox.confirm(`确认撤销对账号 ${uid} 的共享?`, '撤销共享', { type: 'warning' })
-  } catch {
-    return
-  }
-  try {
-    await unshareImage({
-      region: shareDialog.source.region_id,
-      image_id: shareDialog.source.image_id,
-      target_uids: [uid]
-    })
-    ElMessage.success(`已撤销对 ${uid} 的共享`)
-    shareDialog.existing = shareDialog.existing.filter(x => x !== uid)
-  } catch (e) {
-    ElMessage.error('撤销失败: ' + ((e && (e.msg || e.message)) || '网络异常'))
   }
 }
 
