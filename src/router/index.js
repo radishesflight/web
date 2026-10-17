@@ -19,6 +19,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import systemRoutes from './modules/system'
 import codeDeployRoutes from './modules/codeDeploy.js'
+import serverDeployRoutes from './modules/serverDeploy.js'
 
 const routes = [
   {
@@ -33,7 +34,8 @@ const routes = [
         meta: { title: '首页' }
       },
       ...systemRoutes,
-      ...codeDeployRoutes
+      ...codeDeployRoutes,
+      ...serverDeployRoutes
     ]
   },
   {
