@@ -109,6 +109,12 @@ export const BizCode = Object.freeze({
   CloudCredentialNotFound: 9010,
   /** 同名同类型凭证已存在 */
   CloudCredentialNameDup: 9011,
+  /** 云服务器同步失败 */
+  CloudServerSyncFail: 9020,
+  /** 没有可同步的阿里云凭证 */
+  CloudServerNoCredentials: 9021,
+  /** 暂仅支持阿里云(腾讯云 sync 未接入) */
+  CloudServerSyncUnsupported: 9022,
 
   // ===== 9xxx 通用 =====
   /** 未分类失败 */

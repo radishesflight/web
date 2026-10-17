@@ -42,6 +42,15 @@
               :icon="Plus"
               @click="openAddDialog"
             >新建凭证</el-button>
+            <el-button
+              v-if="hasRoute('POST', '/api/serverDeploy/servers/sync')"
+              type="primary"
+              :icon="Refresh"
+              :loading="syncingAll"
+              :disabled="aliyunCount === 0"
+              :title="aliyunCount === 0 ? '没有可同步的阿里云凭证,请先新建阿里云凭证' : '拉取所有阿里云凭证下的服务器'"
+              @click="syncAll"
+            >同步全部服务器</el-button>
           </div>
         </div>
       </template>
@@ -74,7 +83,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="200" show-overflow-tooltip />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="hasRoute('PUT', `/api/serverDeploy/credentials/${row.id}`)"
@@ -83,6 +92,17 @@
               link
               @click="openEditDialog(row)"
             >编辑</el-button>
+            <el-button
+              size="small"
+              type="success"
+              link
+              :disabled="row.type !== 'aliyun' || syncingCredId === row.id"
+              :loading="syncingCredId === row.id"
+              :title="row.type === 'aliyun'
+                ? '通过此凭证拉取云服务器(阿里云)'
+                : '腾讯云同步暂未接入,稍后支持'"
+              @click="syncOne(row)"
+            >同步服务器</el-button>
             <el-button
               v-if="hasRoute('DELETE', `/api/serverDeploy/credentials/${row.id}`)"
               size="small"
@@ -153,8 +173,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { Search, Refresh, Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import {
@@ -162,14 +183,20 @@ import {
   getCredential,
   createCredential,
   updateCredential,
-  deleteCredential
+  deleteCredential,
+  syncServers
 } from '@/api/serverDeploy'
 
 const userStore = useUserStore()
 const hasRoute = userStore.hasRoute
+const router = useRouter()
 
 const list = ref([])
 const loading = ref(false)
+const syncingAll = ref(false)
+const syncingCredId = ref(0) // 0 = 没在 sync;非 0 = 正在 sync 该凭证 id
+
+const aliyunCount = computed(() => list.value.filter(c => c.type === 'aliyun').length)
 
 const filter = reactive({
   type: '',     // 空 = 全部 / aliyun / tencent
@@ -294,6 +321,50 @@ async function confirmDelete(row) {
     loadList()
   } catch {
     // 错误信息已由拦截器弹过
+  }
+}
+
+// 同步全部阿里云凭证的服务器(2026-10-17 新增)
+async function syncAll() {
+  if (aliyunCount.value === 0) {
+    ElMessage.warning('当前没有可同步的阿里云凭证,请先新建阿里云凭证')
+    return
+  }
+  syncingAll.value = true
+  try {
+    const r = await syncServers()
+    if (r.code === 0) {
+      ElMessage.success(`同步完成,共 ${r.data.count} 台服务器`)
+      router.push('/serverDeploy/serverList')
+    } else {
+      ElMessage.error('同步失败: ' + (r.msg || ''))
+    }
+  } catch {
+    // 拦截器已弹
+  } finally {
+    syncingAll.value = false
+  }
+}
+
+// 同步单条凭证的服务器(2026-10-17 新增)
+async function syncOne(row) {
+  if (row.type !== 'aliyun') {
+    ElMessage.warning('腾讯云同步暂未接入,稍后支持')
+    return
+  }
+  syncingCredId.value = row.id
+  try {
+    const r = await syncServers(row.id)
+    if (r.code === 0) {
+      ElMessage.success(`凭证 "${row.name}" 同步完成,共 ${r.data.count} 台服务器`)
+      router.push('/serverDeploy/serverList')
+    } else {
+      ElMessage.error('同步失败: ' + (r.msg || ''))
+    }
+  } catch {
+    // 拦截器已弹
+  } finally {
+    syncingCredId.value = 0
   }
 }
 

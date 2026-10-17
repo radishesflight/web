@@ -64,3 +64,22 @@ export function updateCredential(id, data) {
 export function deleteCredential(id) {
   return request({ url: `/api/serverDeploy/credentials/${id}`, method: 'delete' })
 }
+
+// ========== 云服务器列表(2026-10-17 新增) ==========
+//   GET    /api/serverDeploy/servers?credential_id=&vendor=&region=&keyword=&page=&size=
+//   POST   /api/serverDeploy/servers/sync?credential_id=
+//   GET    /api/serverDeploy/servers/sync/status
+
+export function listServers(params) {
+  return request({ url: '/api/serverDeploy/servers', method: 'get', params })
+}
+
+// 同步全部 aliyun 凭证(credential_id 缺省)
+export function syncServers(credentialId) {
+  const params = credentialId ? { credential_id: credentialId } : {}
+  return request({ url: '/api/serverDeploy/servers/sync', method: 'post', params, timeout: 120000 })
+}
+
+export function getServerSyncStatus() {
+  return request({ url: '/api/serverDeploy/servers/sync/status', method: 'get' })
+}
