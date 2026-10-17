@@ -2,7 +2,8 @@
  * serverDeploy 模块路由
  *
  * 包含:
- *   /serverDeploy/imageList   镜像列表(阿里云 ECS 自定义镜像管理)
+ *   /serverDeploy/imageList       镜像列表(阿里云 ECS 自定义镜像管理)
+ *   /serverDeploy/cloudCredential 云平台凭证管理(2026-10-17 新增,菜单 code=credentials)
  *
  * 加新页面的步骤:
  *   1. 在 src/views/serverDeploy/<sub>/ 加 .vue
@@ -16,5 +17,11 @@ export default [
     name: 'ImageList',
     component: () => import('@/views/serverDeploy/imageList/ImageList.vue'),
     meta: { title: '镜像列表' }
+  },
+  {
+    path: '/serverDeploy/cloudCredential',
+    name: 'CloudCredential',
+    component: () => import('@/views/serverDeploy/cloudCredential/CloudCredential.vue'),
+    meta: { title: '云平台凭证' }
   }
 ]

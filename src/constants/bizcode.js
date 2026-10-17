@@ -104,6 +104,12 @@ export const BizCode = Object.freeze({
   /** 代码包部署失败(JMS 任务执行失败或资产不可达) */
   PackagePullFail: 5012,
 
+  // ===== 9xxx serverDeploy 子模块(2026-10-17 新增) =====
+  /** 云平台凭证不存在 */
+  CloudCredentialNotFound: 9010,
+  /** 同名同类型凭证已存在 */
+  CloudCredentialNameDup: 9011,
+
   // ===== 9xxx 通用 =====
   /** 未分类失败 */
   Unknown: 9999
