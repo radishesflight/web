@@ -61,3 +61,22 @@ export function deleteAdminUsers(id) {
     method: 'delete'
   })
 }
+
+/**
+ * 个人中心 - 当前用户改自己(2026-10-19 新增)
+ *
+ * 挂在 AuthMiddleware 下,不走 PermissionMiddleware
+ * 所有登录用户都能调。id 从 token 拿,前端不传,防越权。
+ *
+ * @param {{email?: string, phone?: string, new_password?: string, old_password: string}} data
+ *   - email / phone / new_password: 都可选,空字符串 = 不改
+ *   - old_password: 必填(任何修改都要求当前密码二次确认)
+ * @returns {Promise<{data: Object}>} 返回更新后的用户信息
+ */
+export function updateMyProfile(data) {
+  return request({
+    url: '/api/system/adminUsers/me',
+    method: 'put',
+    data
+  })
+}
