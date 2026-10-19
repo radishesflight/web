@@ -7,9 +7,10 @@
   "author": "radishesflight <2669512446@qq.com>",
   "license": "MIT",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
+    "dev:localhost": "vite",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
