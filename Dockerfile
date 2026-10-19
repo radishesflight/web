@@ -36,7 +36,8 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 # 健康检查打到 /healthz(nginx.conf 里定义),比查 / 准
+# 用 127.0.0.1 而不是 localhost:busybox wget 默认 IPv6 first,nginx 只 listen IPv4,localhost 会拿到 ::1 → Connection refused
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD wget -qO- http://localhost/healthz || exit 1
+    CMD wget -qO- http://127.0.0.1/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
