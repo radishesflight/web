@@ -63,6 +63,23 @@ export function deleteAdminUsers(id) {
 }
 
 /**
+ * 解除登录限制(2026-10-20 新增)
+ *
+ * 调用方式:POST /api/system/adminUsers/unlock/:id
+ * 权限要求:必须拥有 admin 角色(后端 PermissionMiddleware 拦截)
+ * 后端行为:把 admin_users 的 failed_count 清零、locked_at 置 null
+ *
+ * @param {number} id 目标用户 ID
+ * @returns {Promise<{data: null}>}
+ */
+export function unlockAdminUser(id) {
+  return request({
+    url: `/api/system/adminUsers/unlock/${id}`,
+    method: 'post'
+  })
+}
+
+/**
  * 个人中心 - 当前用户改自己(2026-10-19 新增)
  *
  * 挂在 AuthMiddleware 下,不走 PermissionMiddleware

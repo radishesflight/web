@@ -14,7 +14,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getAdminUsersList, createAdminUsers, updateAdminUsers, deleteAdminUsers } from '@/api/system/adminUsers'
+import { getAdminUsersList, createAdminUsers, updateAdminUsers, deleteAdminUsers, unlockAdminUser } from '@/api/system/adminUsers'
 import { getRoleOptions } from '@/api/system/adminRoles'
 import { useUserStore } from '@/stores/user'
 
@@ -111,6 +111,23 @@ const handleDelete = (row) => {
   })
 }
 
+// 2026-10-20 新增:解除登录限制(仅 admin 角色可见可用)
+const handleUnlock = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定解除 ${row.username} 的登录限制吗？解除后该用户可以重新尝试登录。`,
+      '解除登录限制',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    await unlockAdminUser(row.id)
+    ElMessage.success('已解除登录限制')
+    fetchData()
+  } catch (error) {
+    // 取消时 ElMessageBox 会抛 'cancel',这里不打 error
+    if (error !== 'cancel') console.error('解除登录限制失败:', error)
+  }
+}
+
 const handleSubmit = async () => {
   try {
     const data = {
@@ -187,15 +204,29 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
+        <!-- 2026-10-20 新增:登录状态(锁定/正常) -->
+        <el-table-column label="登录状态" width="100">
+          <template #default="{ row }">
+            <el-tag v-if="row.is_locked" type="danger" size="small">已禁止</el-tag>
+            <el-tag v-else type="success" size="small">正常</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="创建时间">
           <template #default="{ row }">
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleEdit(row)" v-if="userStore.hasRoute('PUT', '/api/system/adminUsers/:id')">编辑</el-button>
             <el-button type="danger" size="small" @click="handleDelete(row)" v-if="userStore.hasRoute('DELETE', '/api/system/adminUsers/:id')">删除</el-button>
+            <!-- 2026-10-20 新增:解除登录限制(只在锁定时显示,按钮级权限 op=POST /api/system/adminUsers/unlock/:id) -->
+            <el-button
+              v-if="row.is_locked && userStore.hasRoute('POST', '/api/system/adminUsers/unlock/:id')"
+              type="warning"
+              size="small"
+              @click="handleUnlock(row)"
+            >解除登录限制</el-button>
           </template>
         </el-table-column>
       </el-table>

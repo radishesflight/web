@@ -51,6 +51,8 @@ export const BizCode = Object.freeze({
   RoleDuplicate: 1009,
   /** 菜单不存在 */
   MenuNotFound: 1010,
+  /** 账号已被锁定(连续 3 次密码错),需管理员解锁 */
+  UserLocked: 1011,
 
   // ===== 2xxx 权限 =====
   /** 无权限(后端 PermissionMiddleware 拦截) */
